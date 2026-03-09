@@ -5,8 +5,7 @@ Git clone the repository
 Create a virtual environment using your environment of choosing
 Run `pip install -r requirements.txt`
 
-Create a file called `.env` in the root of the repository
-Replace API_KEY with the correct API key in discord
+In the file called `.env` in the root of the repository, replace API_KEY with the correct API key in discord
 
 To run the backend go run the python file api/main.py
 To open up the docs to test the API go to `http://localhost:5000/docs`
