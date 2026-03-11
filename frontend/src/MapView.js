@@ -2,7 +2,7 @@
 import { MapContainer, TileLayer, Marker, Popup, Circle } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import chargerIcon from "./icons/map-pin.svg"
+import chargerIcon from "./icons/marker.png"
 
 const chargeIcon = L.icon({
 
@@ -28,9 +28,9 @@ export default function MapView() {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      <Marker position={[50, -0.09]} icon={chargeIcon}>
+      <Marker position={[39.09, -77.20]} icon={chargeIcon}>
         <Popup>
-          <b>Hello World!</b><br />I am a popup.
+          <b>Shady Grove, MD</b><br />Hello World!
         </Popup>
       </Marker>
 
