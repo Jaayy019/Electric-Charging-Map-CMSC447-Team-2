@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Circle } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import chargerIcon from "./icons/marker.png"
+import { useEffect, useState} from "react";
 
 const chargeIcon = L.icon({
 
@@ -14,6 +15,20 @@ const chargeIcon = L.icon({
 });
 
 export default function MapView() {
+
+  // Sets up the arrays to store station data
+  const [stations, setStations] = useState([]);
+
+  // Gets the data from the backend route
+  useEffect(() => {
+
+    fetch("http://localhost:5000/api/charge-points")
+      .then(res => res.json())
+      .then(data => setStations(data))
+      // If station data can't be retrieved
+      .catch(err => console.error("Couldn't fetch station data:", err))
+
+  }, []);
 
   return (
 
@@ -28,11 +43,30 @@ export default function MapView() {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      <Marker position={[39.09, -77.20]} icon={chargeIcon}>
-        <Popup>
-          <b>Shady Grove, MD</b><br />Hello World!
-        </Popup>
-      </Marker>
+      {stations.map((station, idx) => (
+      
+        <Marker
+          key = {idx}
+          position={[
+            station.AddressInfo.Latitude,
+            station.AddressInfo.Longitude
+
+          ]}
+          
+          icon = {chargeIcon}
+        >
+
+          <Popup>
+
+            <b>{station.AddressInfo.Title}</b><br />
+            {station.AddressInfo.AddressLine1}
+
+          </Popup>
+
+
+        </Marker>
+      
+      ))}
 
     </MapContainer>
 
