@@ -24,7 +24,7 @@ export default function MapView() {
 
     fetch("http://localhost:5000/api/charge-points")
       .then(res => res.json())
-      .then(data => setStations(data))
+      .then(data => setStations(data.data))
       // If station data can't be retrieved
       .catch(err => console.error("Couldn't fetch station data:", err))
 
@@ -43,30 +43,37 @@ export default function MapView() {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {stations.map((station, idx) => (
-      
-        <Marker
-          key = {idx}
-          position={[
-            station.AddressInfo.Latitude,
-            station.AddressInfo.Longitude
+      {Array.isArray(stations) && stations.map((station, idx) => {
+        
+        // Get the coordinates safely
+        const lat = station.location?.latitude;
+        const lon = station.location?.longitude;
 
-          ]}
-          
-          icon = {chargeIcon}
-        >
+        // Skip stations with missing coordinates
+        if (lat == null || lon == null) return null;
 
-          <Popup>
+        return(
+          <Marker
+            key = {idx}
+            position={[
+              station.location.latitude,
+              station.location.longitude
+            ]}
+            icon = {chargeIcon}
+          >
 
-            <b>{station.AddressInfo.Title}</b><br />
-            {station.AddressInfo.AddressLine1}
+            <Popup>
 
-          </Popup>
+              <b>{station.location.address}</b><br />
+              {station.location.country}
+
+            </Popup>
 
 
-        </Marker>
-      
-      ))}
+          </Marker>
+        )
+
+      })}
 
     </MapContainer>
 
