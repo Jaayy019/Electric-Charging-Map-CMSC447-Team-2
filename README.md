@@ -31,6 +31,17 @@ If using powershell:
 
 Once done: "npm start"
 
+### Tests
+From the project root (with your virtual environment activated):
+
+```bash
+python -m pytest tests/ -v
+```
+
+Shorter output: `pytest tests/ -v --tb=short` or timing: `pytest tests/ -q --durations=10`
+
+On Windows PowerShell, activate the venv first, for example: `.\venv\Scripts\Activate.ps1`
+
 
 3/4/2026 - 1:43 PM - "Basic React Map and Leaflet integration"
 I added the leaflet map and used the React Map, it does work but the marker icon is broken.
