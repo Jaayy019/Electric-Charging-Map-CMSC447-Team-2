@@ -1,3 +1,13 @@
+from contextlib import asynccontextmanager
+import os
+import sys
+from pathlib import Path
+
+#Repo root on path so database package resolves when running from api/
+_root = Path(__file__).resolve().parents[1]
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -5,7 +15,7 @@ from typing import Optional, List
 from api_get import get_data_from_api, transform_to_simplified_schema
 from models import ChargePointSummary
 from dotenv import load_dotenv
-import os
+from database import dispose_engine
 
 load_dotenv()
 
@@ -14,11 +24,19 @@ API_KEY = os.getenv('API_KEY')
 EXTERNAL_API_URL = "https://api.openchargemap.io/v3/poi/"
 USER_AGENT = "MyApp/1.0"
 
+#If the app is shutdown, dispose the engine.
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+    await dispose_engine()
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Charge Point API",
     description="A simplified backend API for charge point data",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan, #lifespan of the app is the lifespan of the engine
 )
 
 # Enable CORS for frontend requests
