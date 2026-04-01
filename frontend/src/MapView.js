@@ -1,5 +1,5 @@
 //Imports the necessary leaflet map components
-import { MapContainer, TileLayer, Marker, Popup, Circle } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import chargerIcon from "./icons/marker.png"
@@ -13,6 +13,63 @@ const chargeIcon = L.icon({
   popupAnchor: [0, -40]
 
 });
+
+// Handles all events for when certain map actions occur
+function EventHandler() {
+
+  const map = useMap();
+
+  // Handles the moveend function
+  useEffect(() => {
+
+    map.on('moveend', function() {
+
+      // Gets center (LatitudeLongitude) and the zoom level
+      var center = map.getCenter();
+      var zoom = map.getZoom();
+
+      saveLocal(center.lat, center.lng, zoom);
+
+    });
+
+  }, [map]);
+
+  return null;
+
+}
+
+function saveLocal(lat, lng, zoom) {
+
+  // Sets the center and zoom to local storage so it can be loaded later
+  localStorage.setItem('lat', lat);
+  localStorage.setItem('lng', lng);
+  localStorage.setItem('zoom', zoom);
+
+}
+
+function LoadMap() {
+
+  const map = useMap();
+
+  useEffect(() => {
+
+    // Converts the string numbers into actual numbers
+    const lat = parseFloat(localStorage.getItem("lat"));
+    const lng = parseFloat(localStorage.getItem("lng"));
+    const zoom = parseFloat(localStorage.getItem("zoom"));
+
+    // Makes sure that parseFloat actually returns numbers
+    if(!isNaN(lat) && !isNaN(lng) && !isNaN(zoom)) {
+
+      map.setView([lat, lng], zoom);
+
+    }
+
+  }, [map]);
+
+  return null;
+
+}
 
 export default function MapView() {
 
@@ -42,6 +99,9 @@ export default function MapView() {
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+
+      <LoadMap />
+      <EventHandler />
 
       {stations.map((station, idx) => (
       
