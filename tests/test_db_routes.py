@@ -10,20 +10,13 @@ sys.path.insert(0, str(_root / "api"))
 
 import pytest
 import pytest_asyncio
-import asyncio
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from database.session import Base, get_session
 from database.models import ChargePoint, Connection
 
 # Fixtures — spin up an in-memory SQLite DB for each test
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture()
@@ -55,6 +48,7 @@ async def client(test_engine):
 
     # Import app here so env isn't required at collection time
     from main import app
+
     app.dependency_overrides[get_session] = _override_session
 
     transport = ASGITransport(app=app)
@@ -102,17 +96,33 @@ SAMPLE_CHARGE_POINT = {
 
 # ORM model tests
 
+
 @pytest.mark.asyncio
 async def test_create_charge_point_orm(test_session):
     """Can insert and read a ChargePoint via the ORM."""
     cp = ChargePoint(
-        id=1, uuid="orm-test-1",
-        address="1 Test Rd", town="TestTown", postcode="00000",
-        country="US", latitude=40.0, longitude=-75.0,
-        number_of_points=1, availability="Operational", operator="Op",
+        id=1,
+        uuid="orm-test-1",
+        address="1 Test Rd",
+        town="TestTown",
+        postcode="00000",
+        country="US",
+        latitude=40.0,
+        longitude=-75.0,
+        number_of_points=1,
+        availability="Operational",
+        operator="Op",
         connections=[
-            Connection(id=1, port_type="CCS", power_kw=50.0, voltage=400, amps=125,
-                       current_type="DC", status="Operational", quantity=1)
+            Connection(
+                id=1,
+                port_type="CCS",
+                power_kw=50.0,
+                voltage=400,
+                amps=125,
+                current_type="DC",
+                status="Operational",
+                quantity=1,
+            )
         ],
     )
     test_session.add(cp)
@@ -120,8 +130,11 @@ async def test_create_charge_point_orm(test_session):
 
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
+
     result = await test_session.execute(
-        select(ChargePoint).options(selectinload(ChargePoint.connections)).where(ChargePoint.id == 1)
+        select(ChargePoint)
+        .options(selectinload(ChargePoint.connections))
+        .where(ChargePoint.id == 1)
     )
     row = result.scalar_one()
     assert row.uuid == "orm-test-1"
@@ -133,13 +146,29 @@ async def test_create_charge_point_orm(test_session):
 async def test_cascade_delete(test_session):
     """Deleting a ChargePoint cascades to its Connections."""
     cp = ChargePoint(
-        id=2, uuid="cascade-test",
-        address="", town="", postcode="", country="US",
-        latitude=0.0, longitude=0.0, number_of_points=0,
-        availability="Unknown", operator="X",
-        connections=[Connection(id=10, port_type="Type1", power_kw=7.0,
-                                voltage=230, amps=32, current_type="AC",
-                                status="Operational", quantity=1)],
+        id=2,
+        uuid="cascade-test",
+        address="",
+        town="",
+        postcode="",
+        country="US",
+        latitude=0.0,
+        longitude=0.0,
+        number_of_points=0,
+        availability="Unknown",
+        operator="X",
+        connections=[
+            Connection(
+                id=10,
+                port_type="Type1",
+                power_kw=7.0,
+                voltage=230,
+                amps=32,
+                current_type="AC",
+                status="Operational",
+                quantity=1,
+            )
+        ],
     )
     test_session.add(cp)
     await test_session.commit()
@@ -148,11 +177,13 @@ async def test_cascade_delete(test_session):
     await test_session.commit()
 
     from sqlalchemy import select
+
     result = await test_session.execute(select(Connection).where(Connection.id == 10))
     assert result.scalar_one_or_none() is None
 
 
 # Route tests
+
 
 @pytest.mark.asyncio
 async def test_list_empty(client):
@@ -182,8 +213,7 @@ async def test_create_and_get(client):
 async def test_bulk_create(client):
     """POST /api/db/charge-points/bulk saves multiple."""
     items = [
-        {**SAMPLE_CHARGE_POINT, "id": 100 + i, "uuid": f"bulk-{i}",
-         "connections": []}
+        {**SAMPLE_CHARGE_POINT, "id": 100 + i, "uuid": f"bulk-{i}", "connections": []}
         for i in range(3)
     ]
     resp = await client.post("/api/db/charge-points/bulk", json=items)
@@ -199,8 +229,10 @@ async def test_bulk_create(client):
 async def test_delete(client):
     """DELETE removes a charge point."""
     # Create first
-    resp = await client.post("/api/db/charge-points",
-                             json={**SAMPLE_CHARGE_POINT, "id": 999, "uuid": "del-test"})
+    resp = await client.post(
+        "/api/db/charge-points",
+        json={**SAMPLE_CHARGE_POINT, "id": 999, "uuid": "del-test"},
+    )
     assert resp.status_code == 201
 
     # Delete
@@ -225,3 +257,32 @@ async def test_health(client):
     resp = await client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_openapi_schema(client):
+    """OpenAPI JSON exposes health and DB routes."""
+    resp = await client.get("/openapi.json")
+    assert resp.status_code == 200
+    paths = resp.json().get("paths", {})
+    assert "/health" in paths
+    assert "/api/db/charge-points" in paths
+
+
+@pytest.mark.asyncio
+async def test_swagger_ui(client):
+    """Swagger UI is served for interactive API exploration."""
+    resp = await client.get("/docs")
+    assert resp.status_code == 200
+    assert "swagger" in resp.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_list_charge_points_accepts_geo_query_params(client):
+    """List route accepts optional geo filters (filtering may be added later)."""
+    resp = await client.get(
+        "/api/db/charge-points",
+        params={"latitude": 39.0, "longitude": -76.0, "radius_km": 10, "limit": 5},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []

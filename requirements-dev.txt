@@ -1,0 +1,4 @@
+# Local dev & CI: pip install -r requirements.txt -r requirements-dev.txt
+ruff>=0.9,<1
+pytest-cov>=6,<7
+pip-audit>=2.7,<3
