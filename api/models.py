@@ -2,8 +2,10 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
+
 class ConnectionInfo(BaseModel):
     """Simplified connection/port information."""
+
     id: int
     port_type: str  # e.g., "Type 2 (Socket Only)"
     power_kw: float  # e.g., 7.4
@@ -13,8 +15,10 @@ class ConnectionInfo(BaseModel):
     status: str  # e.g., "Operational"
     quantity: int  # Number of this type of port
 
+
 class LocationInfo(BaseModel):
     """Simplified location information."""
+
     address: str
     town: str
     postcode: str
@@ -23,8 +27,10 @@ class LocationInfo(BaseModel):
     longitude: float
     contact_email: Optional[str] = None
 
+
 class ChargePointSummary(BaseModel):
     """Simplified charge point data."""
+
     id: int
     uuid: str
     location: LocationInfo
@@ -37,7 +43,9 @@ class ChargePointSummary(BaseModel):
     operator: str
     last_verified: Optional[datetime] = None
 
+
 class ChargePointsResponse(BaseModel):
     """Response containing multiple charge points."""
+
     charge_points: List[ChargePointSummary]
     total: int

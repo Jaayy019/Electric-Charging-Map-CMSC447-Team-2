@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/db", tags=["Database"])
 
 # Helpers — convert between ORM rows and Pydantic response models
 
+
 def _row_to_summary(row: ChargePoint) -> ChargePointSummary:
     """Convert a ChargePoint ORM object to a Pydantic ChargePointSummary."""
     return ChargePointSummary(
@@ -90,6 +91,7 @@ def _summary_to_row(data: ChargePointSummary) -> ChargePoint:
 
 
 # Routes
+
 
 @router.get("/charge-points", response_model=list[ChargePointSummary])
 async def list_charge_points(

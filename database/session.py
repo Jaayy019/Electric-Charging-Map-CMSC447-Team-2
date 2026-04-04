@@ -12,26 +12,33 @@ from sqlalchemy.orm import DeclarativeBase
 
 load_dotenv()
 
-#Get the url from the environment variable and create the engine
+# Get the url from the environment variable and create the engine
+
 
 # Base class for all ORM models
 class Base(DeclarativeBase):
     pass
 
+
 # Engine & session factory
 _url = os.getenv("DATABASE_URL", "").strip()
 
 if _url:
-    # Remote Postgres
+    # Remote Postgres. Neon requires TLS; asyncpg uses connect_args, not libpq sslmode.
+    _pg_dsn = _url.removeprefix("postgresql://")
+    _lower = _url.lower()
+    _need_ssl = "neon.tech" in _lower or "sslmode=require" in _lower
     engine: Optional[AsyncEngine] = create_async_engine(
-        "postgresql+asyncpg://" + _url.removeprefix("postgresql://"), #remove the postgresql:// from the url
-        pool_pre_ping=True, #ping the database to keep the connection alive
+        "postgresql+asyncpg://" + _pg_dsn,
+        pool_pre_ping=True,
+        connect_args={"ssl": True} if _need_ssl else {},
     )
 else:
     # Fallback to local SQLite so the app runs without Postgres
     _sqlite_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "data", "local.db",
+        "data",
+        "local.db",
     )
     os.makedirs(os.path.dirname(_sqlite_path), exist_ok=True)
     engine = create_async_engine(
@@ -51,5 +58,5 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def dispose_engine() -> None:
-    if engine is not None: #if the engine is not None, dispose of it
-        await engine.dispose() #dispose of the engine
+    if engine is not None:  # if the engine is not None, dispose of it
+        await engine.dispose()  # dispose of the engine

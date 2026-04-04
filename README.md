@@ -4,7 +4,7 @@ Git clone the repository
 Create a virtual environment using your environment of choosing
 Run `pip install -r requirements.txt`
 
-Copy `.env.example` to `.env` in the project root and set `API_KEY` to your key (for example from course Discord). The `.env` file is ignored by Git and must not be committed.
+Copy `.env.example` to `.env` in the project root and set `OCM_API_KEY` to your Open Charge Map key. The `.env` file is ignored by Git and must not be committed.
 
 To run the backend go run the python file api/main.py
 To open up the docs to test the API go to `http://localhost:5000/docs`

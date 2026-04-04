@@ -1,0 +1,19 @@
+target-version = "py312"
+line-length = 100
+src = ["api", "database", "tests", "scripts"]
+
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+]
+
+[lint]
+# Keep CI stable; widen rules later (I/UP/B/SIM) if you want stricter style.
+select = ["E", "F"]
+
+[lint.per-file-ignores]
+# sys.path is adjusted before third-party / local imports
+"api/main.py" = ["E402"]
+"tests/test_db_routes.py" = ["E402"]
