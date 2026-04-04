@@ -10,7 +10,6 @@ sys.path.insert(0, str(_root / "api"))
 
 import pytest
 import pytest_asyncio
-import asyncio
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
@@ -18,13 +17,6 @@ from database.session import Base, get_session
 from database.models import ChargePoint, Connection
 
 # Fixtures — spin up an in-memory SQLite DB for each test
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture()

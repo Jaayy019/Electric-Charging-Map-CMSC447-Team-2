@@ -1,8 +1,12 @@
 ## Backend:
 ### How to run:
 Git clone the repository
-Create a virtual environment using your environment of choosing
+Create a virtual environment using your environment of choosing (`source venv/Scripts/activate`)
+
 Run `pip install -r requirements.txt`
+
+For contributing, also run:
+`pip install -r requirements.txt -r requirements-dev.txt`
 
 Copy `.env.example` to `.env` in the project root and set `OCM_API_KEY` to your Open Charge Map key. The `.env` file is ignored by Git and must not be committed.
 
