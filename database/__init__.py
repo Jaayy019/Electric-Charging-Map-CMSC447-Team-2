@@ -1,5 +1,14 @@
-"""Database package — extend session.py (sessions, models, queries)."""
+"""Database package — session, models, and helpers."""
 
-from database.session import dispose_engine, engine
+from database.session import Base, dispose_engine, engine, get_session, async_session_factory
+from database.models import ChargePoint, Connection
 
-__all__ = ["dispose_engine", "engine"]
+__all__ = [
+    "Base",
+    "dispose_engine",
+    "engine",
+    "get_session",
+    "async_session_factory",
+    "ChargePoint",
+    "Connection",
+]

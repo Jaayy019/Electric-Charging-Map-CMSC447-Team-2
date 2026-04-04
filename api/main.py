@@ -15,7 +15,9 @@ from typing import Optional, List
 from api_get import get_data_from_api, transform_to_simplified_schema
 from models import ChargePointSummary
 from dotenv import load_dotenv
-from database import dispose_engine
+from database import dispose_engine, engine
+from database.session import Base
+from routes import router as db_router
 
 load_dotenv()
 
@@ -27,6 +29,10 @@ USER_AGENT = "MyApp/1.0"
 #If the app is shutdown, dispose the engine.
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Create tables if the database is configured
+    if engine is not None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     yield
     await dispose_engine()
 
@@ -121,6 +127,9 @@ async def get_charge_points(
         total=len(simplified_data),
         error=None
     )
+
+# Mount database-backed routes
+app.include_router(db_router)
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
