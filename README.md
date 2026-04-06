@@ -35,6 +35,7 @@ In the event of errors:
 Outdated or conflicting packages:
 1. "rm -rf node_modules"
 2. "npm install"
+
 If using powershell:
 1. "rmdir node_modules -Recurse -Force"
 2. "npm install"
