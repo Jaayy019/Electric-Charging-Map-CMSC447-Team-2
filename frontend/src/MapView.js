@@ -81,7 +81,7 @@ export default function MapView() {
 
     fetch("http://localhost:5000/api/charge-points")
       .then(res => res.json())
-      .then(data => setStations(data))
+      .then(data => setStations(data.data))
       // If station data can't be retrieved
       .catch(err => console.error("Couldn't fetch station data:", err))
 
@@ -113,25 +113,24 @@ export default function MapView() {
         <Marker
           key = {idx}
           position={[
-            station.AddressInfo.Latitude,
-            station.AddressInfo.Longitude
-
-          ]}
-          
-          icon = {chargeIcon}
+              station.AddressInfo.Latitude,
+              station.AddressInfo.Longitude
+            ]}
+            icon = {chargeIcon}
         >
 
-          <Popup>
+            <Popup>
 
-            <b>{station.AddressInfo.Title}</b><br />
-            {station.AddressInfo.AddressLine1}
+              <b>{station.location.address}</b><br />
+              {station.location.country}
 
-          </Popup>
+            </Popup>
 
 
-        </Marker>
-      
-      ))}
+          </Marker>
+        
+
+    ))}
 
     </MapContainer>
 
