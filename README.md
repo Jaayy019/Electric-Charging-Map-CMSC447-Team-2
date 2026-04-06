@@ -10,6 +10,12 @@ For contributing, also run:
 
 Copy `.env.example` to `.env` in the project root and set `OCM_API_KEY` to your Open Charge Map key. The `.env` file is ignored by Git and must not be committed.
 
+For Neon: set **`DATABASE_DEV_URL`** to your dev branch connection string (and optionally **`DATABASE_URL`** for prod). If **`DATABASE_DEV_URL`** is set, the backend uses it first. After tables exist, you can load sample rows into Postgres with:
+
+`python scripts/seed_dev_db.py`
+
+(from the repo root, with the venv activated). The script skips if `charge_points` already has data.
+
 To run the backend go run the python file api/main.py
 To open up the docs to test the API go to `http://localhost:5000/docs`
 The docs will describe to you how to request charging port data from the back end
