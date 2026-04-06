@@ -1,5 +1,6 @@
 import os
 from typing import AsyncGenerator, Optional
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import (
@@ -12,7 +13,26 @@ from sqlalchemy.orm import DeclarativeBase
 
 load_dotenv()
 
-# Get the url from the environment variable and create the engine
+
+def _strip_libpq_params_for_asyncpg(url: str) -> str:
+    """Remove query keys asyncpg does not support (libpq passes sslmode, channel_binding)."""
+    parsed = urlparse(url.strip())
+    if not parsed.query:
+        return url.strip()
+    pairs = [
+        (k, v)
+        for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+        if k.lower() not in ("sslmode", "channel_binding")
+    ]
+    return urlunparse(parsed._replace(query=urlencode(pairs)))
+
+
+def resolve_database_url() -> str:
+    """Prefer DATABASE_DEV_URL (Neon dev), else DATABASE_URL; empty means use SQLite."""
+    dev = os.getenv("DATABASE_DEV_URL", "").strip()
+    if dev:
+        return dev
+    return os.getenv("DATABASE_URL", "").strip()
 
 
 # Base class for all ORM models
@@ -21,11 +41,12 @@ class Base(DeclarativeBase):
 
 
 # Engine & session factory
-_url = os.getenv("DATABASE_URL", "").strip()
+_url = resolve_database_url()
 
 if _url:
     # Remote Postgres. Neon requires TLS; asyncpg uses connect_args, not libpq sslmode.
-    _pg_dsn = _url.removeprefix("postgresql://")
+    _url_async = _strip_libpq_params_for_asyncpg(_url)
+    _pg_dsn = _url_async.removeprefix("postgresql://")
     _lower = _url.lower()
     _need_ssl = "neon.tech" in _lower or "sslmode=require" in _lower
     engine: Optional[AsyncEngine] = create_async_engine(
