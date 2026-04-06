@@ -90,14 +90,19 @@ export default function MapView() {
   return (
 
     // Makes the map container, basically just the HTML file but in javascript
+    // Map wrapping and out-of-frame bounds now disabled
     <MapContainer
       center={[38, -100]}
       zoom={4}
       style={{ height: "100vh", width: "100%" }}
+      maxBounds={[[-90, -180], [90, 180]]} 
+      maxBoundsViscosity={1.0} 
+      minZoom={3}
     >
 
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        noWrap={true}
       />
 
       <LoadMap />
