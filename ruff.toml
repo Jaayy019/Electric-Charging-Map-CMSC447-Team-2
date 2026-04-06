@@ -17,4 +17,5 @@ select = ["E", "F"]
 # sys.path is adjusted before third-party / local imports
 "api/main.py" = ["E402"]
 "tests/test_db_routes.py" = ["E402"]
+"tests/test_seed_dev_data.py" = ["E402"]
 "scripts/seed_dev_db.py" = ["E402"]
