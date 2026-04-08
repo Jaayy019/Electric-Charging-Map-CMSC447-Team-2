@@ -261,11 +261,12 @@ async def test_health(client):
 
 @pytest.mark.asyncio
 async def test_openapi_schema(client):
-    """OpenAPI JSON exposes health and DB routes."""
+    """OpenAPI JSON exposes health, external OCM proxy, and DB routes."""
     resp = await client.get("/openapi.json")
     assert resp.status_code == 200
     paths = resp.json().get("paths", {})
     assert "/health" in paths
+    assert "/api/charge-points" in paths
     assert "/api/db/charge-points" in paths
 
 

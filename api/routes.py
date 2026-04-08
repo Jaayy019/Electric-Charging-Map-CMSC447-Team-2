@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/db", tags=["Database"])
 # Helpers — convert between ORM rows and Pydantic response models
 
 
-def _row_to_summary(row: ChargePoint) -> ChargePointSummary:
+def charge_point_to_summary(row: ChargePoint) -> ChargePointSummary:
     """Convert a ChargePoint ORM object to a Pydantic ChargePointSummary."""
     return ChargePointSummary(
         id=row.id,
@@ -111,7 +111,7 @@ async def list_charge_points(
     )
     result = await session.execute(stmt)
     rows = result.scalars().all()
-    return [_row_to_summary(r) for r in rows]
+    return [charge_point_to_summary(r) for r in rows]
 
 
 @router.get("/charge-points/{charge_point_id}", response_model=ChargePointSummary)
@@ -129,7 +129,7 @@ async def get_charge_point(
     row = result.scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Charge point not found")
-    return _row_to_summary(row)
+    return charge_point_to_summary(row)
 
 
 @router.post("/charge-points", response_model=ChargePointSummary, status_code=201)
@@ -142,7 +142,7 @@ async def create_charge_point(
     session.add(row)
     await session.commit()
     await session.refresh(row, attribute_names=["connections"])
-    return _row_to_summary(row)
+    return charge_point_to_summary(row)
 
 
 @router.post("/charge-points/bulk", response_model=dict, status_code=201)

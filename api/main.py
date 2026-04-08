@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 import os
 import sys
 from pathlib import Path
@@ -15,11 +16,15 @@ from typing import Optional, List
 from api_get import get_data_from_api, transform_to_simplified_schema
 from models import ChargePointSummary
 from dotenv import load_dotenv
-from database import dispose_engine, engine
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from database import dispose_engine, engine, async_session_factory, ChargePoint, Connection
 from database.session import Base
-from routes import router as db_router
+from routes import router as db_router, charge_point_to_summary
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # Configuration — must match .env.example (`OCM_API_KEY`); `API_KEY` kept as legacy alias
 OCM_API_KEY = os.getenv("OCM_API_KEY") or os.getenv("API_KEY")
@@ -68,6 +73,58 @@ class HealthResponse(BaseModel):
     status: str
 
 
+async def _save_to_local_db(charge_points: List[ChargePointSummary]) -> int:
+    """Persist charge points to the local database, skipping duplicates by ID."""
+    if engine is None:
+        return 0
+
+    saved = 0
+    async with async_session_factory() as session:
+        for cp in charge_points:
+            # Check if this charge point already exists
+            existing = await session.execute(select(ChargePoint).where(ChargePoint.id == cp.id))
+            if existing.scalar_one_or_none() is not None:
+                continue
+
+            row = ChargePoint(
+                id=cp.id,
+                uuid=cp.uuid,
+                address=cp.location.address,
+                town=cp.location.town,
+                postcode=cp.location.postcode,
+                country=cp.location.country,
+                latitude=cp.location.latitude,
+                longitude=cp.location.longitude,
+                contact_email=cp.location.contact_email,
+                number_of_points=cp.number_of_points,
+                price=cp.price,
+                availability=cp.availability,
+                membership_required=cp.membership_required,
+                access_key_required=cp.access_key_required,
+                operator=cp.operator,
+                last_verified=cp.last_verified,
+                connections=[
+                    Connection(
+                        id=c.id,
+                        port_type=c.port_type,
+                        power_kw=c.power_kw,
+                        voltage=c.voltage,
+                        amps=c.amps,
+                        current_type=c.current_type,
+                        status=c.status,
+                        quantity=c.quantity,
+                    )
+                    for c in cp.connections
+                ],
+            )
+            session.add(row)
+            saved += 1
+
+        if saved:
+            await session.commit()
+    return saved
+
+
 @app.get("/api/charge-points", response_model=DataResponse, tags=["Charge Points"])
 async def get_charge_points(
     latitude: Optional[float] = Query(None, description="Latitude for location-based search"),
@@ -79,6 +136,7 @@ async def get_charge_points(
 ):
     """
     Fetch charge point data from the external API and return simplified schema.
+    Results are automatically saved to the local database for offline access.
 
     Optionally filter by location using latitude and longitude.
 
@@ -91,7 +149,7 @@ async def get_charge_points(
     """
 
     # Build query parameters for the external API
-    params = {}
+    params: dict = {"maxresults": 200}
 
     if latitude is not None and longitude is not None:
         params["latitude"] = latitude
@@ -112,15 +170,27 @@ async def get_charge_points(
         params["verbose"] = "false"
         params["key"] = OCM_API_KEY
 
-
-        print(f"📍 Location-based search: lat={latitude}, lng={longitude}, distance={dist}km")
+        logger.info(
+            "Location-based OCM search: lat=%s lng=%s distance=%skm",
+            latitude,
+            longitude,
+            dist,
+        )
     else:
-        print("📍 Fetching all charge points (no location filter)")
+        params["compact"] = "true"
+        params["verbose"] = "false"
+        params["key"] = OCM_API_KEY
+        logger.info("OCM fetch without location filter (maxresults=%s)", params.get("maxresults"))
 
     result = get_data_from_api(OCM_API_KEY, EXTERNAL_API_URL, USER_AGENT, params)
 
     if isinstance(result, dict) and "error" in result:
-        return DataResponse(status="error", data=None, total=0, error=result["error"])
+        # External API failed — try serving from local database
+        logger.warning(
+            "External API failed, falling back to local database: %s",
+            result.get("error"),
+        )
+        return await _fallback_from_local_db()
 
     # Transform raw data to simplified schema
     simplified_data, transform_error = transform_to_simplified_schema(result)
@@ -133,9 +203,47 @@ async def get_charge_points(
             error=transform_error or "Failed to transform API data",
         )
 
+    # Save to local database in the background
+    try:
+        saved_count = await _save_to_local_db(simplified_data)
+        if saved_count:
+            logger.info("Saved %s new charge point(s) to local database", saved_count)
+    except Exception:
+        logger.exception("Failed to save to local database")
+
     return DataResponse(
         status="success", data=simplified_data, total=len(simplified_data), error=None
     )
+
+
+async def _fallback_from_local_db() -> DataResponse:
+    """Serve cached charge points from the local database when the external API is unavailable."""
+    if engine is None:
+        return DataResponse(status="error", data=None, total=0, error="No database configured")
+
+    try:
+        async with async_session_factory() as session:
+            stmt = select(ChargePoint).options(selectinload(ChargePoint.connections)).limit(50)
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+
+            if not rows:
+                return DataResponse(
+                    status="error",
+                    data=None,
+                    total=0,
+                    error="External API unavailable and no cached data found",
+                )
+
+            data = [charge_point_to_summary(r) for r in rows]
+            return DataResponse(status="success", data=data, total=len(data), error=None)
+    except Exception as e:
+        return DataResponse(
+            status="error",
+            data=None,
+            total=0,
+            error=f"External API unavailable and database fallback failed: {e}",
+        )
 
 
 # Mount database-backed routes
