@@ -14,6 +14,46 @@ const chargeIcon = L.icon({
 
 });
 
+function requestUserLocation(callback) {
+
+  // Quick check if the browser supports it
+  if (!navigator.geolocation) {
+
+    console.error("Geolocation not allowed");
+    return;
+
+  }
+
+  navigator.geolocation.getCurrentPosition(
+
+    // Gets the users position
+    (pos) => {
+
+      const{latitude, longitude} = pos.coords;
+      callback(latitude, longitude);
+
+    },
+
+    (err) => {
+
+      console.error("User denied providing their location:", err);
+
+    }
+
+  );
+
+}
+
+function fetchStationsNearby(lat, lng, setStations) {
+
+  fetch("http://localhost:5000/api/charge-points?lat=${lat}&lng=${lng}&distance=10")
+    .then(res => res.json())
+    .then(data => setStations(data.data))
+    .catch(err => console.error("Could not fetch station data:", err));
+
+}
+
+
 // Handles all events for when certain map actions occur
 function EventHandler() {
 
@@ -76,14 +116,14 @@ export default function MapView() {
   // Sets up the arrays to store station data
   const [stations, setStations] = useState([]);
 
-  // Gets the data from the backend route
+  // Gets the user location and then gets the stations
   useEffect(() => {
 
-    fetch("http://localhost:5000/api/charge-points")
-      .then(res => res.json())
-      .then(data => setStations(data.data))
-      // If station data can't be retrieved
-      .catch(err => console.error("Couldn't fetch station data:", err))
+    requestUserLocation((lat, lng) => {
+
+      fetchStationsNearby(lat, lng, setStations);
+      
+    });
 
   }, []);
 
