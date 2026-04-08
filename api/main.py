@@ -161,6 +161,15 @@ async def get_charge_points(
             params["distance"] = 5
 
         dist = params.get("distance")
+
+        # Required by OCM or returns default parameters
+        params["distanceunit"] = "KM"
+        params["maxresults"] = 100
+        params["compact"] = "true"
+        params["verbose"] = "false"
+        params["key"] = OCM_API_KEY
+
+
         print(f"📍 Location-based search: lat={latitude}, lng={longitude}, distance={dist}km")
     else:
         print("📍 Fetching all charge points (no location filter)")
