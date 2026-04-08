@@ -119,7 +119,6 @@ export default function MapView() {
   // Gets the user location and then gets the stations
   useEffect(() => {
 
-    console.log("Requesting location");
     requestUserLocation((lat, lng) => {
 
       fetchStationsNearby(lat, lng, setStations);
