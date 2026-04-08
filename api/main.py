@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 import os
 import sys
 from pathlib import Path
@@ -19,9 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from database import dispose_engine, engine, async_session_factory, ChargePoint, Connection
 from database.session import Base
-from routes import router as db_router
+from routes import router as db_router, charge_point_to_summary
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # Configuration — must match .env.example (`OCM_API_KEY`); `API_KEY` kept as legacy alias
 OCM_API_KEY = os.getenv("OCM_API_KEY") or os.getenv("API_KEY")
@@ -79,9 +82,7 @@ async def _save_to_local_db(charge_points: List[ChargePointSummary]) -> int:
     async with async_session_factory() as session:
         for cp in charge_points:
             # Check if this charge point already exists
-            existing = await session.execute(
-                select(ChargePoint).where(ChargePoint.id == cp.id)
-            )
+            existing = await session.execute(select(ChargePoint).where(ChargePoint.id == cp.id))
             if existing.scalar_one_or_none() is not None:
                 continue
 
@@ -148,7 +149,7 @@ async def get_charge_points(
     """
 
     # Build query parameters for the external API
-    params = {"maxresults": 200}
+    params: dict = {"maxresults": 200}
 
     if latitude is not None and longitude is not None:
         params["latitude"] = latitude
@@ -169,17 +170,27 @@ async def get_charge_points(
         params["verbose"] = "false"
         params["key"] = OCM_API_KEY
 
-
-        print(f"📍 Location-based search: lat={latitude}, lng={longitude}, distance={dist}km")
+        logger.info(
+            "Location-based OCM search: lat=%s lng=%s distance=%skm",
+            latitude,
+            longitude,
+            dist,
+        )
     else:
-        print("📍 Fetching all charge points (no location filter)")
+        params["compact"] = "true"
+        params["verbose"] = "false"
+        params["key"] = OCM_API_KEY
+        logger.info("OCM fetch without location filter (maxresults=%s)", params.get("maxresults"))
 
     result = get_data_from_api(OCM_API_KEY, EXTERNAL_API_URL, USER_AGENT, params)
 
     if isinstance(result, dict) and "error" in result:
         # External API failed — try serving from local database
-        print("External API failed, falling back to local database")
-        return await _fallback_from_local_db(latitude, longitude)
+        logger.warning(
+            "External API failed, falling back to local database: %s",
+            result.get("error"),
+        )
+        return await _fallback_from_local_db()
 
     # Transform raw data to simplified schema
     simplified_data, transform_error = transform_to_simplified_schema(result)
@@ -196,46 +207,41 @@ async def get_charge_points(
     try:
         saved_count = await _save_to_local_db(simplified_data)
         if saved_count:
-            print(f"Saved {saved_count} new charge points to local database")
-    except Exception as e:
-        print(f"Failed to save to local database: {e}")
+            logger.info("Saved %s new charge point(s) to local database", saved_count)
+    except Exception:
+        logger.exception("Failed to save to local database")
 
     return DataResponse(
         status="success", data=simplified_data, total=len(simplified_data), error=None
     )
 
 
-async def _fallback_from_local_db(
-    latitude: Optional[float] = None, longitude: Optional[float] = None
-) -> DataResponse:
+async def _fallback_from_local_db() -> DataResponse:
     """Serve cached charge points from the local database when the external API is unavailable."""
     if engine is None:
         return DataResponse(status="error", data=None, total=0, error="No database configured")
 
     try:
         async with async_session_factory() as session:
-            stmt = (
-                select(ChargePoint)
-                .options(selectinload(ChargePoint.connections))
-                .limit(50)
-            )
+            stmt = select(ChargePoint).options(selectinload(ChargePoint.connections)).limit(50)
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
             if not rows:
                 return DataResponse(
-                    status="error", data=None, total=0,
+                    status="error",
+                    data=None,
+                    total=0,
                     error="External API unavailable and no cached data found",
                 )
 
-            from routes import _row_to_summary
-            data = [_row_to_summary(r) for r in rows]
-            return DataResponse(
-                status="success", data=data, total=len(data), error=None
-            )
+            data = [charge_point_to_summary(r) for r in rows]
+            return DataResponse(status="success", data=data, total=len(data), error=None)
     except Exception as e:
         return DataResponse(
-            status="error", data=None, total=0,
+            status="error",
+            data=None,
+            total=0,
             error=f"External API unavailable and database fallback failed: {e}",
         )
 
