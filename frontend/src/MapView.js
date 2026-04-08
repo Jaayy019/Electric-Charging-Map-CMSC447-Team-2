@@ -44,13 +44,13 @@ function requestUserLocation(callback) {
 
 }
 
+// Calls the OCM API and gets stations in a 20km radius based on geolocation
 function fetchStationsNearby(lat, lng, setStations) {
 
-  fetch("http://localhost:5000/api/charge-points?lat=${lat}&lng=${lng}&distance=10")
+  fetch(`http://localhost:5000/api/charge-points?latitude=${lat}&longitude=${lng}&distance=20`)
     .then(res => res.json())
     .then(data => setStations(data.data))
     .catch(err => console.error("Could not fetch station data:", err));
-
 }
 
 
@@ -119,6 +119,7 @@ export default function MapView() {
   // Gets the user location and then gets the stations
   useEffect(() => {
 
+    console.log("Requesting location");
     requestUserLocation((lat, lng) => {
 
       fetchStationsNearby(lat, lng, setStations);
@@ -126,6 +127,11 @@ export default function MapView() {
     });
 
   }, []);
+
+  useEffect(() => {
+  console.log("Stations received:", stations);
+  }, [stations]);
+
 
   return (
 
@@ -153,8 +159,8 @@ export default function MapView() {
         <Marker
           key = {idx}
           position={[
-              station.AddressInfo.Latitude,
-              station.AddressInfo.Longitude
+              station.location.latitude,
+              station.location.longitude
             ]}
             icon = {chargeIcon}
         >
