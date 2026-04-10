@@ -11,7 +11,10 @@ sys.path.insert(0, str(_root / "api"))
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from api.routes import _bounding_box, _haversine_km
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from database.session import Base, get_session
 from database.models import ChargePoint, Connection
@@ -47,7 +50,7 @@ async def client(test_engine):
             yield session
 
     # Import app here so env isn't required at collection time
-    from main import app
+    from api.main import app
 
     app.dependency_overrides[get_session] = _override_session
 
@@ -128,8 +131,6 @@ async def test_create_charge_point_orm(test_session):
     test_session.add(cp)
     await test_session.commit()
 
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
 
     result = await test_session.execute(
         select(ChargePoint)
@@ -175,8 +176,6 @@ async def test_cascade_delete(test_session):
 
     await test_session.delete(cp)
     await test_session.commit()
-
-    from sqlalchemy import select
 
     result = await test_session.execute(select(Connection).where(Connection.id == 10))
     assert result.scalar_one_or_none() is None
@@ -279,11 +278,103 @@ async def test_swagger_ui(client):
 
 
 @pytest.mark.asyncio
-async def test_list_charge_points_accepts_geo_query_params(client):
-    """List route accepts optional geo filters (filtering may be added later)."""
+async def test_geo_filter_returns_only_stations_in_radius(client):
+    """Stations inside the search radius are returned, stations outside are excluded."""
+    #Baltimore City Hall — reference point for the search
+    center_lat, center_lng = 39.2904, -76.6111
+
+    #Base payload with no connection IDs to avoid unique constraint collisions
+    base = {**SAMPLE_CHARGE_POINT, "connections": []}
+    
+    #Not real charge points, just used for testing
+    #Station A: ~1 km north (should be included in a 5 km search)
+    station_near = {**base, "id": 201, "uuid": "geo-near", "location": 
+    {**SAMPLE_CHARGE_POINT["location"],
+    "latitude": 39.2994, 
+    "longitude": -76.6122}}
+
+    #Station B: ~36 km away (Annapolis should be excluded by a 5 km radius)
+    station_far = {**base, "id": 202, "uuid": "geo-far","location": 
+    {**SAMPLE_CHARGE_POINT["location"],
+    "latitude": 38.9784, 
+    "longitude": -76.4922}}
+
+    await client.post("/api/db/charge-points", json=station_near)
+    await client.post("/api/db/charge-points", json=station_far)
+
     resp = await client.get(
         "/api/db/charge-points",
-        params={"latitude": 39.0, "longitude": -76.0, "radius_km": 10, "limit": 5},
+        params={"latitude": center_lat, "longitude": center_lng, "radius_km": 5},
+    )
+    assert resp.status_code == 200
+    ids = [s["id"] for s in resp.json()]
+    assert 201 in ids, "Near station should be included"
+    assert 202 not in ids, "Far station (Annapolis) should be excluded"
+
+
+@pytest.mark.asyncio
+async def test_geo_filter_no_results_when_all_out_of_radius(client):
+    """Returns empty list when no stations fall within the search radius."""
+    #Station in San Francisco no connection IDs to avoid collisions
+    station_sf = {**SAMPLE_CHARGE_POINT, "id": 203, "uuid": "geo-sf", "connections": [],"location": 
+    {**SAMPLE_CHARGE_POINT["location"],
+    "latitude": 37.7749, 
+    "longitude": -122.4194}}
+    await client.post("/api/db/charge-points", json=station_sf)
+
+    #Search around Baltimore with a 10 km radius to verify it's working
+    resp = await client.get(
+        "/api/db/charge-points",
+        params={"latitude": 39.2904, "longitude": -76.6122, "radius_km": 10},
     )
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_geo_filter_missing_params_returns_all(client):
+    """When geo params are omitted entirely, all charge points are returned (no filter)."""
+    station = {**SAMPLE_CHARGE_POINT, "id": 204, "uuid": "geo-nofilter", "connections": []}
+    await client.post("/api/db/charge-points", json=station)
+
+    #No geo params should return everything
+    resp = await client.get("/api/db/charge-points")
+    assert resp.status_code == 200
+    assert len(resp.json()) >= 1
+
+
+@pytest.mark.asyncio
+async def test_geo_filter_partial_params_ignored(client):
+    """Supplying lat+lng but no radius_km falls back to returning all rows (no filter)."""
+    station = {**SAMPLE_CHARGE_POINT, "id": 205, "uuid": "geo-partial", "connections": []}
+    await client.post("/api/db/charge-points", json=station)
+
+    #lat+lng but no radius treated as no geo filter
+    resp = await client.get(
+        "/api/db/charge-points",
+        params={"latitude": 39.2904, "longitude": -76.6122},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) >= 1
+
+# Haversine / bounding-box unit tests
+
+def test_haversine_known_distance():
+    """Haversine between Baltimore City Hall and Annapolis State House is ~36 km."""
+    dist = _haversine_km(39.2904, -76.6111, 38.9784, -76.4922)
+    assert 34 < dist < 40, f"Expected ~36 km, got {dist:.2f}"
+
+
+def test_haversine_zero_distance():
+    """Same point should return 0 km."""
+    assert _haversine_km(39.0, -76.0, 39.0, -76.0) == 0.0
+
+
+def test_bounding_box_symmetry():
+    """Bounding box should be symmetric around the centre point."""
+    lat, lon, r = 39.2904, -76.6122, 10.0
+    min_lat, max_lat, min_lon, max_lon = _bounding_box(lat, lon, r)
+    assert min_lat < lat < max_lat
+    assert min_lon < lon < max_lon
+    #Lat delta is constant (~ r / 111.32)
+    assert pytest.approx(max_lat - lat, abs=0.01) == lat - min_lat

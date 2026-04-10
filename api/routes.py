@@ -1,5 +1,6 @@
 """Database-backed CRUD routes for charge points."""
 
+import math
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,11 +8,44 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from database.session import get_session
 from database.models import ChargePoint, Connection
+from database.session import get_session
 from models import ChargePointSummary, ConnectionInfo, LocationInfo
 
 router = APIRouter(prefix="/api/db", tags=["Database"])
+
+
+# Geo helpers
+_EARTH_RADIUS_KM = 6371.0
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return the circle distance in kilometres between two lat/lng points."""
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
+    return _EARTH_RADIUS_KM * 2 * math.asin(math.sqrt(a))
+
+
+def _bounding_box(
+    latitude: float, longitude: float, radius_km: float
+) -> tuple[float, float, float, float]:
+    """Return (min_lat, max_lat, min_lon, max_lon) for a rough bounding box.
+
+    latitude = 111.32 km (constant) due to dividing the Earth's circumference by 360.
+    longitude = 111.32 * cos(lat) km (shrinks toward the poles).
+    """
+    lat_delta = radius_km / 111.32
+    lon_delta = radius_km / (111.32 * max(math.cos(math.radians(latitude)), 1e-9))
+    return (
+        latitude - lat_delta,
+        latitude + lat_delta,
+        longitude - lon_delta,
+        longitude + lon_delta,
+    )
 
 
 # Helpers — convert between ORM rows and Pydantic response models
@@ -97,20 +131,53 @@ def _summary_to_row(data: ChargePointSummary) -> ChargePoint:
 async def list_charge_points(
     latitude: Optional[float] = Query(None, description="Filter by latitude"),
     longitude: Optional[float] = Query(None, description="Filter by longitude"),
-    radius_km: Optional[float] = Query(None, description="Search radius in km"),
+    radius_km: Optional[float] = Query(
+        None, description="Search radius in km (requires latitude and longitude)"
+    ),
     limit: int = Query(50, ge=1, le=500, description="Max results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     session: AsyncSession = Depends(get_session),
 ):
-    """List charge points stored in the database."""
-    stmt = (
-        select(ChargePoint)
-        .options(selectinload(ChargePoint.connections))
-        .limit(limit)
-        .offset(offset)
-    )
-    result = await session.execute(stmt)
-    rows = result.scalars().all()
+    """List charge points stored in the database.
+
+    When latitude, longitude, and radius_km are all given the results
+    are filtered to a circle of the given radius using a two pass strategy:
+
+    1. Bounding box SQL filter — a BETWEEN pre filter that works on
+       SQLite (tests)/Postgres (production).
+    2. Haversine post filter — an exact circle check in Python that removes
+       the corners of the bounding box, which are further away than the radius.
+    """
+    #Check if all geo parameters are provided
+    geo_filter = latitude is not None and longitude is not None and radius_km is not None
+    #Create a select statement with loading for connections
+    stmt = select(ChargePoint).options(selectinload(ChargePoint.connections))
+
+    #If geo parameters are provided, filter by bounding box
+    if geo_filter:
+        min_lat, max_lat, min_lon, max_lon = _bounding_box(latitude, longitude, radius_km)
+        stmt = stmt.where(
+            ChargePoint.latitude.between(min_lat, max_lat),
+            ChargePoint.longitude.between(min_lon, max_lon),
+        )
+
+        #Fetch everything inside the bounding box, Haversine will trim the corners.
+        #Skip SQL LIMIT/OFFSET here so pagination applies to the precise result set.
+        result = await session.execute(stmt)
+        all_rows = result.scalars().all()
+
+        rows_in_circle = [
+            r
+            for r in all_rows
+            if _haversine_km(latitude, longitude, r.latitude, r.longitude) <= radius_km
+        ]
+        #Apply offset + limit after the precise filter
+        rows = rows_in_circle[offset : offset + limit]
+    else:
+        stmt = stmt.limit(limit).offset(offset)
+        result = await session.execute(stmt)
+        rows = list(result.scalars().all())
+
     return [charge_point_to_summary(r) for r in rows]
 
 
