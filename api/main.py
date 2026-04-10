@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from database import dispose_engine, engine, async_session_factory, ChargePoint, Connection
 from database.session import Base
+from auth_routes import router as auth_router
 from routes import router as db_router, charge_point_to_summary
 
 load_dotenv()
@@ -248,6 +249,7 @@ async def _fallback_from_local_db() -> DataResponse:
 
 # Mount database-backed routes
 app.include_router(db_router)
+app.include_router(auth_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
