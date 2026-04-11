@@ -111,7 +111,7 @@ function LoadMap() {
 
 }
 
-export default function MapView() {
+export default function MapView({ goToLogin }) {
 
   // Sets up the arrays to store station data
   const [stations, setStations] = useState([]);
@@ -133,9 +133,27 @@ export default function MapView() {
 
 
   return (
+  <>
+    {/* Login button on top-right corner, takes user to login page */}
+    <button 
+        onClick={goToLogin}
+        style={{
+          position: "absolute",
+          top: "10px",
+          right: "10px",
+          zIndex: 1000,
+          padding: "10px 15px",
+          backgroundColor: "#3090ff",
+          color: "white",
+          border: "none",
+          borderRadius: "5px",
+          cursor: "pointer"
+        }}
+      >
+        Login
+      </button>
 
-    // Makes the map container, basically just the HTML file but in javascript
-    // Map wrapping and out-of-frame bounds now disabled
+    {/* Makes the map container, basically just the HTML file but in javascript */}
     <MapContainer
       center={[38, -100]}
       zoom={4}
@@ -178,7 +196,7 @@ export default function MapView() {
     ))}
 
     </MapContainer>
-
+  </>
   );
 
 }
