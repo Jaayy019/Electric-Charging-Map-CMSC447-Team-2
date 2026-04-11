@@ -49,3 +49,40 @@ class ChargePointsResponse(BaseModel):
 
     charge_points: List[ChargePointSummary]
     total: int
+
+
+class VehicleCreate(BaseModel):
+    """Request body for adding a vehicle to a user account."""
+
+    make: str
+    model: str
+    year: int
+    port_type: str
+
+
+class VehicleResponse(BaseModel):
+    """Response for a saved vehicle."""
+
+    id: int
+    make: str
+    model: str
+    year: int
+    port_type: str
+    created_at: datetime
+
+
+class AccountCreate(BaseModel):
+    """Request body for creating a new user account."""
+
+    username: str
+    email: str
+    password: str
+
+
+class AccountResponse(BaseModel):
+    """Response after successful account creation."""
+
+    id: int
+    username: str
+    email: str
+    created_at: datetime
