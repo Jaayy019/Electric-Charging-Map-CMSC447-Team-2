@@ -217,9 +217,7 @@ async def get_charge_points(
         logger.exception("Failed to load cached data for merge")
 
     all_data = list(merged.values())
-    return DataResponse(
-        status="success", data=all_data, total=len(all_data), error=None
-    )
+    return DataResponse(status="success", data=all_data, total=len(all_data), error=None)
 
 
 async def _load_all_from_local_db() -> List[ChargePointSummary]:

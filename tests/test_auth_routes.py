@@ -124,7 +124,7 @@ async def test_password_is_hashed(test_session):
 @pytest.mark.asyncio
 async def test_user_session_cascade_delete(test_session):
     """Deleting a User cascades to its Sessions."""
-    from datetime import datetime, timedelta
+    from datetime import UTC, datetime, timedelta
 
     user = User(
         username="cascadeuser",
@@ -138,7 +138,7 @@ async def test_user_session_cascade_delete(test_session):
     session_row = Session(
         user_id=user.id,
         token="test-token-123",
-        expires_at=datetime.utcnow() + timedelta(hours=1),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
     test_session.add(session_row)
     await test_session.commit()
@@ -148,9 +148,7 @@ async def test_user_session_cascade_delete(test_session):
 
     from sqlalchemy import select
 
-    result = await test_session.execute(
-        select(Session).where(Session.token == "test-token-123")
-    )
+    result = await test_session.execute(select(Session).where(Session.token == "test-token-123"))
     assert result.scalar_one_or_none() is None
 
 
@@ -212,9 +210,7 @@ async def test_update_vehicle(client):
     vehicle_id = resp.json()["id"]
 
     updated = {**VALID_VEHICLE, "make": "Ford", "model": "Mustang Mach-E", "port_type": "CCS"}
-    resp = await client.put(
-        f"/api/auth/users/{user_id}/vehicles/{vehicle_id}", json=updated
-    )
+    resp = await client.put(f"/api/auth/users/{user_id}/vehicles/{vehicle_id}", json=updated)
     assert resp.status_code == 200
     data = resp.json()
     assert data["make"] == "Ford"
@@ -225,9 +221,7 @@ async def test_update_vehicle(client):
 async def test_update_vehicle_not_found(client):
     """PUT on non-existent vehicle returns 404."""
     user_id = await _create_user(client)
-    resp = await client.put(
-        f"/api/auth/users/{user_id}/vehicles/9999", json=VALID_VEHICLE
-    )
+    resp = await client.put(f"/api/auth/users/{user_id}/vehicles/9999", json=VALID_VEHICLE)
     assert resp.status_code == 404
 
 
@@ -266,8 +260,11 @@ async def test_vehicle_cascade_delete(test_session):
     await test_session.refresh(user)
 
     vehicle = Vehicle(
-        user_id=user.id, make="Tesla", model="Model Y",
-        year=2024, port_type="CCS",
+        user_id=user.id,
+        make="Tesla",
+        model="Model Y",
+        year=2024,
+        port_type="CCS",
     )
     test_session.add(vehicle)
     await test_session.commit()
@@ -277,9 +274,7 @@ async def test_vehicle_cascade_delete(test_session):
 
     from sqlalchemy import select
 
-    result = await test_session.execute(
-        select(Vehicle).where(Vehicle.user_id == user.id)
-    )
+    result = await test_session.execute(select(Vehicle).where(Vehicle.user_id == user.id))
     assert result.scalar_one_or_none() is None
 
 
@@ -292,8 +287,11 @@ async def test_create_vehicle_orm(test_session):
     await test_session.refresh(user)
 
     vehicle = Vehicle(
-        user_id=user.id, make="Chevrolet", model="Bolt EV",
-        year=2023, port_type="CCS",
+        user_id=user.id,
+        make="Chevrolet",
+        model="Bolt EV",
+        year=2023,
+        port_type="CCS",
     )
     test_session.add(vehicle)
     await test_session.commit()
@@ -400,13 +398,23 @@ async def test_delete_one_vehicle_keeps_others(client):
 async def test_vehicle_belongs_to_correct_user(client):
     """A user cannot access another user's vehicle."""
     # Create two users
-    resp1 = await client.post("/api/auth/create-account", json={
-        "username": "user_a", "email": "a@example.com", "password": "password123",
-    })
+    resp1 = await client.post(
+        "/api/auth/create-account",
+        json={
+            "username": "user_a",
+            "email": "a@example.com",
+            "password": "password123",
+        },
+    )
     user_a = resp1.json()["id"]
-    resp2 = await client.post("/api/auth/create-account", json={
-        "username": "user_b", "email": "b@example.com", "password": "password123",
-    })
+    resp2 = await client.post(
+        "/api/auth/create-account",
+        json={
+            "username": "user_b",
+            "email": "b@example.com",
+            "password": "password123",
+        },
+    )
     user_b = resp2.json()["id"]
 
     # Add vehicle to user_a

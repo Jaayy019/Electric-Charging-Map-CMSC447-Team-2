@@ -258,19 +258,13 @@ async def create_account(
         raise HTTPException(status_code=400, detail="All fields are required")
 
     if len(data.password) < 8:
-        raise HTTPException(
-            status_code=400, detail="Password must be at least 8 characters"
-        )
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
-    existing = await session.execute(
-        select(User).where(User.username == data.username)
-    )
+    existing = await session.execute(select(User).where(User.username == data.username))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Username already taken")
 
-    existing = await session.execute(
-        select(User).where(User.email == data.email)
-    )
+    existing = await session.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Email already registered")
 
@@ -301,9 +295,7 @@ async def list_vehicles(
     if user.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    result = await session.execute(
-        select(Vehicle).where(Vehicle.user_id == user_id)
-    )
+    result = await session.execute(select(Vehicle).where(Vehicle.user_id == user_id))
     rows = result.scalars().all()
     return [
         VehicleResponse(
