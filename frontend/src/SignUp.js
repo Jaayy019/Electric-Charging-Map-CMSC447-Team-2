@@ -1,4 +1,4 @@
-function Login({ onLoginSuccess, goToSignUp }) {
+function SignUp({ onLoginSuccess, goToLogin }) {
   const body = {
     backgroundColor: '#0080ff', 
     fontFamily: "'Open Sans', sans-serif",
@@ -18,11 +18,11 @@ function Login({ onLoginSuccess, goToSignUp }) {
 
   return (
     <>
-      <title>Login</title>
+      <title>Sign Up</title>
       <div class="container" style={body}>
         <form class="loginForm" style={formBody}>
 
-          <h1 style={{ textAlign: 'center' }}>Login</h1>
+          <h1 style={{ textAlign: 'center' }}>Create an account</h1>
           <br/>
 
           <div class="input-group">
@@ -39,11 +39,11 @@ function Login({ onLoginSuccess, goToSignUp }) {
 
           <br/>
           <button onClick={ onLoginSuccess }>Login</button>
-          <button onClick={ goToSignUp }>Create an account</button>
+          <button onClick={ goToLogin }>Already have an account? Login</button>
 
         </form>
       </div>
     </>
   );
 }
-export default Login;
+export default SignUp;
