@@ -108,7 +108,6 @@ async def get_charge_points(
         # Required by OCM or returns default parameters
         params["distanceunit"] = "KM"
         params["maxresults"] = 100
-        params["compact"] = "true"
         params["verbose"] = "false"
         params["key"] = OCM_API_KEY
 
