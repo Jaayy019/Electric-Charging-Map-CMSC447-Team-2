@@ -4,10 +4,15 @@ Neon Auth (Better Auth) — backend-only integration.
 Proxies sign-in / sign-up to the managed Neon Auth service and validates JWTs for
 protected routes. No UI; clients call these endpoints and store the session/JWT
 as needed.
+
+Also registers local-SQLite account and vehicle routes under the same `/api/auth`
+prefix (`/create-account`, `/users/.../vehicles`) for development and tests.
+These paths do not overlap Neon Auth routes (`/sign-up`, `/sign-in`, `/me`).
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 from typing import Annotated, Any, Optional
 
@@ -15,8 +20,13 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 
+from database.models import User, Vehicle
+from database.session import get_session
+from models import AccountCreate, AccountResponse, VehicleCreate, VehicleResponse
 from neon_auth_jwt import try_decode_neon_jwt
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
@@ -218,3 +228,165 @@ async def sign_out() -> dict[str, str]:
         "status": "ok",
         "message": ("Discard client-side token. Cookie sign-out can be added with the frontend."),
     }
+
+
+# --- Local SQLite account / vehicle (development & tests; distinct from Neon paths) ---
+
+
+def _hash_password(password: str) -> str:
+    """Hash a password with a random salt using PBKDF2-SHA256."""
+    salt = os.urandom(16)
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations=600_000)
+    return salt.hex() + ":" + hashed.hex()
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    """Verify a password against a stored hash."""
+    salt_hex, hash_hex = stored.split(":")
+    salt = bytes.fromhex(salt_hex)
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations=600_000)
+    return hashed.hex() == hash_hex
+
+
+@router.post("/create-account", response_model=AccountResponse, status_code=201)
+async def create_account(
+    data: AccountCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a new user account in the local database."""
+    if not data.username or not data.email or not data.password:
+        raise HTTPException(status_code=400, detail="All fields are required")
+
+    if len(data.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    existing = await session.execute(select(User).where(User.username == data.username))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Username already taken")
+
+    existing = await session.execute(select(User).where(User.email == data.email))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    user = User(
+        username=data.username,
+        email=data.email,
+        password_hash=_hash_password(data.password),
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    return AccountResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        created_at=user.created_at,
+    )
+
+
+@router.get("/users/{user_id}/vehicles", response_model=list[VehicleResponse])
+async def list_vehicles(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """List all vehicles for a user."""
+    user = await session.execute(select(User).where(User.id == user_id))
+    if user.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    result = await session.execute(select(Vehicle).where(Vehicle.user_id == user_id))
+    rows = result.scalars().all()
+    return [
+        VehicleResponse(
+            id=v.id,
+            make=v.make,
+            model=v.model,
+            year=v.year,
+            port_type=v.port_type,
+            created_at=v.created_at,
+        )
+        for v in rows
+    ]
+
+
+@router.post("/users/{user_id}/vehicles", response_model=VehicleResponse, status_code=201)
+async def add_vehicle(
+    user_id: int,
+    data: VehicleCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Add a vehicle to a user's account."""
+    user = await session.execute(select(User).where(User.id == user_id))
+    if user.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    vehicle = Vehicle(
+        user_id=user_id,
+        make=data.make,
+        model=data.model,
+        year=data.year,
+        port_type=data.port_type,
+    )
+    session.add(vehicle)
+    await session.commit()
+    await session.refresh(vehicle)
+
+    return VehicleResponse(
+        id=vehicle.id,
+        make=vehicle.make,
+        model=vehicle.model,
+        year=vehicle.year,
+        port_type=vehicle.port_type,
+        created_at=vehicle.created_at,
+    )
+
+
+@router.put("/users/{user_id}/vehicles/{vehicle_id}", response_model=VehicleResponse)
+async def update_vehicle(
+    user_id: int,
+    vehicle_id: int,
+    data: VehicleCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update a vehicle's info."""
+    result = await session.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user_id)
+    )
+    vehicle = result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    vehicle.make = data.make
+    vehicle.model = data.model
+    vehicle.year = data.year
+    vehicle.port_type = data.port_type
+    await session.commit()
+    await session.refresh(vehicle)
+
+    return VehicleResponse(
+        id=vehicle.id,
+        make=vehicle.make,
+        model=vehicle.model,
+        year=vehicle.year,
+        port_type=vehicle.port_type,
+        created_at=vehicle.created_at,
+    )
+
+
+@router.delete("/users/{user_id}/vehicles/{vehicle_id}", status_code=204)
+async def delete_vehicle(
+    user_id: int,
+    vehicle_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a vehicle from a user's account."""
+    result = await session.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user_id)
+    )
+    vehicle = result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    await session.delete(vehicle)
+    await session.commit()
