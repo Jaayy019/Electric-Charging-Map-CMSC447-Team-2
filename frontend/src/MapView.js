@@ -1,5 +1,5 @@
 //Imports the necessary leaflet map components
-import { MapContainer, TileLayer, Marker, Popup, useMap} from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import chargerIcon from "./icons/marker.png"
@@ -128,7 +128,7 @@ function LoadMap() {
 
 }
 
-export default function MapView({ goToLogin }) {
+export default function MapView({ goToLogin, handleLogout}) {
 
   // Sets up the arrays to store station data
   const [stations, setStations] = useState([]);
@@ -160,7 +160,7 @@ export default function MapView({ goToLogin }) {
         style={{
           position: "absolute",
           top: "10px",
-          right: "10px",
+          right: "100px",
           zIndex: 1000,
           padding: "10px 15px",
           backgroundColor: "#3090ff",
@@ -170,8 +170,27 @@ export default function MapView({ goToLogin }) {
           cursor: "pointer"
         }}
       >
-        Login
-      </button>
+      Login
+    </button>
+
+    <button
+      onClick={handleLogout}
+      style={{
+        position: "absolute",
+        top: "10px",
+        right: "20px",
+        zIndex: 1000,
+        padding: "10px 15px",
+        backgroundColor: "#ff4d4d",
+        color: "white",
+        border: "none",
+        borderRadius: "5px",
+        cursor: "pointer"
+      }}
+    >
+      Logout
+    </button>
+
 
     {/*Side panel*/}
     {selectedStation && (
