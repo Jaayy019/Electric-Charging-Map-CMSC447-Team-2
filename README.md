@@ -20,7 +20,7 @@ After tables exist, you can load sample rows into Postgres with:
 
 (from the repo root, with the venv activated). The script skips if `charge_points` already has data.
 
-To run the backend from the repo root (with the venv activated):
+To run the backend from the repo root:
 
 ```bash
 python api/main.py

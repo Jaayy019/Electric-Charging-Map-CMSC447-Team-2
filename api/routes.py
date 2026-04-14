@@ -1,15 +1,16 @@
 """Database-backed CRUD routes for charge points."""
 
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database.session import get_session
 from database.models import ChargePoint, Connection
-from models import ChargePointSummary, ConnectionInfo, LocationInfo
+from models import ChargePointSummary, ConnectionInfo, LocationInfo, AccountCreate, AccountResponse, VehicleCreate, VehicleResponse, Account, Vehicle
 
 router = APIRouter(prefix="/api/db", tags=["Database"])
 
@@ -169,4 +170,245 @@ async def delete_charge_point(
     if row is None:
         raise HTTPException(status_code=404, detail="Charge point not found")
     await session.delete(row)
+    await session.commit()
+
+@router.post("/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
+async def create_account(
+    account: AccountCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a new user account."""
+    stmt = select(Account).where(
+        (Account.username == account.username) | (Account.email == account.email)
+    )
+    result = await session.execute(stmt)
+    existing_user = result.scalar_one_or_none()
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already exists",
+        )
+    
+    # TODO: Hash account password/add some security
+    new_account = Account(
+        username=account.username,
+        email=account.email,
+        password=account.password,
+        created_at=datetime.utcnow(),
+    )
+    
+    session.add(new_account)
+    await session.commit()
+    await session.refresh(new_account)
+    
+    return new_account
+
+
+@router.get("/accounts", response_model=List[AccountResponse])
+async def get_accounts(
+    session: AsyncSession = Depends(get_session),
+):
+    """Retrieve all user accounts."""
+    stmt = select(Account).options(selectinload(Account.vehicles))
+    result = await session.execute(stmt)
+    accounts = result.scalars().all()
+    return accounts
+
+
+@router.get("/accounts/{account_id}", response_model=AccountResponse)
+async def get_account(
+    account_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Retrieve a specific account by ID."""
+    stmt = select(Account).where(Account.id == account_id)
+    result = await session.execute(stmt)
+    account = result.scalar_one_or_none()
+    
+    if account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+    
+    return account
+
+
+@router.put("/accounts/{account_id}", response_model=AccountResponse)
+async def update_account(
+    account_id: int,
+    account: AccountCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update an existing account."""
+    stmt = select(Account).where(Account.id == account_id)
+    result = await session.execute(stmt)
+    existing_account = result.scalar_one_or_none()
+    
+    if existing_account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+    
+    existing_account.username = account.username
+    existing_account.email = account.email
+    # TODO: Hash account password for security
+    existing_account.password = account.password
+    
+    await session.commit()
+    await session.refresh(existing_account)
+    
+    return existing_account
+
+
+@router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    account_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a user account."""
+    stmt = select(Account).where(Account.id == account_id)
+    result = await session.execute(stmt)
+    account = result.scalar_one_or_none()
+    
+    if account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+    
+    await session.delete(account)
+    await session.commit()
+
+@router.post("/accounts/{account_id}/vehicles", response_model=VehicleResponse, status_code=status.HTTP_201_CREATED)
+async def create_vehicle(
+    account_id: int,
+    vehicle: VehicleCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Add a vehicle to a user account."""
+    stmt = select(Account).where(Account.id == account_id)
+    result = await session.execute(stmt)
+    account = result.scalar_one_or_none()
+    
+    if account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+    
+    new_vehicle = Vehicle(
+        account_id=account_id,
+        make=vehicle.make,
+        model=vehicle.model,
+        year=vehicle.year,
+        port_type=vehicle.port_type,
+        created_at=datetime.utcnow(),
+    )
+    
+    session.add(new_vehicle)
+    await session.commit()
+    await session.refresh(new_vehicle)
+    
+    return new_vehicle
+
+
+@router.get("/accounts/{account_id}/vehicles", response_model=List[VehicleResponse])
+async def get_vehicles(
+    account_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Retrieve all vehicles for a specific account."""
+    stmt = select(Account).where(Account.id == account_id)
+    result = await session.execute(stmt)
+    account = result.scalar_one_or_none()
+    
+    if account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+    
+    stmt = select(Vehicle).where(Vehicle.account_id == account_id)
+    result = await session.execute(stmt)
+    vehicles = result.scalars().all()
+    
+    return vehicles
+
+
+@router.get("/accounts/{account_id}/vehicles/{vehicle_id}", response_model=VehicleResponse)
+async def get_vehicle(
+    account_id: int,
+    vehicle_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Retrieve a specific vehicle by ID."""
+    stmt = select(Vehicle).where(
+        (Vehicle.id == vehicle_id) & (Vehicle.account_id == account_id)
+    )
+    result = await session.execute(stmt)
+    vehicle = result.scalar_one_or_none()
+    
+    if vehicle is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found",
+        )
+    
+    return vehicle
+
+
+@router.put("/accounts/{account_id}/vehicles/{vehicle_id}", response_model=VehicleResponse)
+async def update_vehicle(
+    account_id: int,
+    vehicle_id: int,
+    vehicle: VehicleCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update an existing vehicle."""
+    stmt = select(Vehicle).where(
+        (Vehicle.id == vehicle_id) & (Vehicle.account_id == account_id)
+    )
+    result = await session.execute(stmt)
+    existing_vehicle = result.scalar_one_or_none()
+    
+    if existing_vehicle is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found",
+        )
+    
+    existing_vehicle.make = vehicle.make
+    existing_vehicle.model = vehicle.model
+    existing_vehicle.year = vehicle.year
+    existing_vehicle.port_type = vehicle.port_type
+    
+    await session.commit()
+    await session.refresh(existing_vehicle)
+    
+    return existing_vehicle
+
+
+@router.delete("/accounts/{account_id}/vehicles/{vehicle_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_vehicle(
+    account_id: int,
+    vehicle_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a vehicle from an account."""
+    stmt = select(Vehicle).where(
+        (Vehicle.id == vehicle_id) & (Vehicle.account_id == account_id)
+    )
+    result = await session.execute(stmt)
+    vehicle = result.scalar_one_or_none()
+    
+    if vehicle is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found",
+        )
+    
+    await session.delete(vehicle)
     await session.commit()
