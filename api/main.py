@@ -52,10 +52,11 @@ app = FastAPI(
     lifespan=lifespan,  # lifespan of the app is the lifespan of the engine
 )
 
-# Enable CORS for frontend requests
+# CORS: explicit origins required when allow_credentials=True (cannot use "*").
+_cors = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _cors.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -165,7 +166,6 @@ async def get_charge_points(
         # Required by OCM or returns default parameters
         params["distanceunit"] = "KM"
         params["maxresults"] = 100
-        params["compact"] = "true"
         params["verbose"] = "false"
         params["key"] = OCM_API_KEY
 

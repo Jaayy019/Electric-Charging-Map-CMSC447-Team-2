@@ -1,12 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey
-from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
-Base = declarative_base()
 
 class ConnectionInfo(BaseModel):
     """Simplified connection/port information."""
@@ -77,7 +73,7 @@ class VehicleResponse(BaseModel):
 
 
 class AccountCreate(BaseModel):
-    """Request body for creating a new user account."""
+    """Request body for creating a new user account (local DB /api/auth/create-account)."""
 
     username: str
     email: str
@@ -91,42 +87,3 @@ class AccountResponse(BaseModel):
     username: str
     email: str
     created_at: datetime
-
-class Account(Base):
-    """User account model."""
-    __tablename__ = "accounts"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    password: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    # Relationship
-    vehicles: Mapped[List["Vehicle"]] = relationship(
-        "Vehicle",
-        back_populates="account",
-        cascade="all, delete-orphan"
-    )
-
-
-class Vehicle(Base):
-    """Vehicle model associated with an account."""
-    __tablename__ = "vehicles"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    account_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.id", ondelete="CASCADE"),
-        nullable=False
-    )
-    make: Mapped[str] = mapped_column(String(100), nullable=False)
-    model: Mapped[str] = mapped_column(String(100), nullable=False)
-    year: Mapped[int] = mapped_column(Integer, nullable=False)
-    port_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    # Relationship
-    account: Mapped["Account"] = relationship(
-        "Account",
-        back_populates="vehicles"
-    )
