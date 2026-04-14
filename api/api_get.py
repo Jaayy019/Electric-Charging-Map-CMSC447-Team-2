@@ -1,8 +1,35 @@
+"""
+Open Charge Map fetch + transform to our schema.
+
+TODO (api-query / backend): geo accuracy, batching, OCM error taxonomy,
+optional response caching.
+"""
+
 import requests
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 from models import ChargePointSummary, LocationInfo, ConnectionInfo
 import logging
 import traceback
+
+
+def _to_naive_utc_datetime(value: Optional[object]) -> Optional[datetime]:
+    """Store in Postgres TIMESTAMP WITHOUT TIME ZONE as UTC, naive (asyncpg requirement)."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+    if isinstance(value, str):
+        s = value.strip().replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(s)
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
+    return None
+
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -30,20 +57,18 @@ def get_data_from_api(api_key, api_url, user_agent, params: Optional[Dict[str, A
 
         if response.status_code == 200:
             logger.info("API request successful")
-            print("✓ API request successful")
             if params:
-                print(f"  Query params: {params}")
+                safe = {k: v for k, v in params.items() if str(k).lower() != "key"}
+                logger.debug("Query params: %s", safe)
             return response.json()
         else:
             error_msg = f"API returned status code {response.status_code}"
             logger.error(error_msg)
-            print(f"✗ {error_msg}")
             return {"error": error_msg}
 
     except requests.exceptions.RequestException as e:
         error_msg = str(e)
-        logger.error(f"Request failed: {error_msg}")
-        print(f"✗ Request failed: {error_msg}")
+        logger.error("Request failed: %s", error_msg)
         return {"error": error_msg}
 
 
@@ -106,7 +131,7 @@ def transform_single_charge_point(
             membership_required=usage_type.get("IsMembershipRequired", False),
             access_key_required=usage_type.get("IsAccessKeyRequired", False),
             operator=raw_point.get("OperatorInfo", {}).get("Title", "Unknown"),
-            last_verified=raw_point.get("DateLastVerified"),
+            last_verified=_to_naive_utc_datetime(raw_point.get("DateLastVerified")),
         )
 
         return charge_point, None
@@ -130,31 +155,35 @@ def transform_to_simplified_schema(
         tuple: (List of ChargePointSummary or None, error message or None)
     """
     try:
-        print("\n📊 Starting transformation...")
+        logger.debug("Starting transformation")
 
         # Handle if it's a list of charge points
         if isinstance(raw_data, list):
-            print(f"📍 Processing {len(raw_data)} charge points...")
+            logger.debug("Processing %s charge points", len(raw_data))
             charge_points = []
 
             for i, point in enumerate(raw_data):
                 simplified_point, error = transform_single_charge_point(point)
                 if simplified_point:
                     charge_points.append(simplified_point)
-                    print(f"✓ Charge point {i + 1} processed (ID: {simplified_point.id})")
+                    logger.debug(
+                        "Charge point %s processed (ID: %s)",
+                        i + 1,
+                        simplified_point.id,
+                    )
                 else:
-                    print(f"✗ Failed to process charge point {i + 1}: {error}")
+                    logger.debug("Failed to process charge point %s: %s", i + 1, error)
 
-            print(f"✓ Successfully transformed {len(charge_points)} charge points")
+            logger.debug("Transformed %s charge points", len(charge_points))
             return charge_points, None
 
         # Handle if it's a single object
         elif isinstance(raw_data, dict):
-            print("📍 Processing single charge point...")
+            logger.debug("Processing single charge point")
             simplified_point, error = transform_single_charge_point(raw_data)
 
             if simplified_point:
-                print(f"✓ Charge point processed (ID: {simplified_point.id})")
+                logger.debug("Charge point processed (ID: %s)", simplified_point.id)
                 return [simplified_point], None
             else:
                 return None, error
@@ -164,6 +193,5 @@ def transform_to_simplified_schema(
 
     except Exception as e:
         error_msg = f"Transformation error: {str(e)}\n{traceback.format_exc()}"
-        print(f"✗ {error_msg}")
         logger.error(error_msg)
         return None, error_msg

@@ -10,19 +10,46 @@ For contributing, also run:
 
 Copy `.env.example` to `.env` in the project root and set `OCM_API_KEY` to your Open Charge Map key. The `.env` file is ignored by Git and must not be committed.
 
-For Neon: set **`DATABASE_DEV_URL`** to your dev branch connection string (and optionally **`DATABASE_URL`** for prod). If **`DATABASE_DEV_URL`** is set, the backend uses it first. After tables exist, you can load sample rows into Postgres with:
+For Neon: set `DATABASE_DEV_URL` to your dev branch connection string (and optionally `DATABASE_URL` for prod). If `DATABASE_DEV_URL` is set, the backend uses it first.
+
+Set `NEON_AUTH_BASE_URL` in `.env` to the Auth base URL Neon shows (ends with `/neondb/auth`). The API exposes `POST /api/auth/sign-up`, `POST /api/auth/sign-in`, and `GET /api/auth/me` (session cookie or Bearer JWT).
+
+After tables exist, you can load sample rows into Postgres with:
 
 `python scripts/seed_dev_db.py`
 
 (from the repo root, with the venv activated). The script skips if `charge_points` already has data.
 
-To run the backend go run the python file api/main.py
-To open up the docs to test the API go to `http://localhost:5000/docs`
-The docs will describe to you how to request charging port data from the back end
+To run the backend from the repo root:
 
+```bash
+python api/main.py
+```
+
+Or with uvicorn explicitly:
+
+```bash
+python -m uvicorn main:app --app-dir api --host localhost --port 5000
+```
+
+Open http://localhost:5000/docs for interactive OpenAPI docs (charge points, database CRUD, health, and auth routes).
+
+#### Testing Neon Auth end-to-end
+
+The JSON `token` from sign-in/sign-up is an **opaque session id**, not a JWT. `GET /api/auth/me` verifies either a real JWT in `Authorization: Bearer` or your session cookie after sign-in.
+
+**curl with cookies (PowerShell):**
+
+```powershell
+curl -c jar.txt -X POST "http://localhost:5000/api/auth/sign-in" -H "Content-Type: application/json" -d "{\"email\":\"you@example.com\",\"password\":\"your-password\"}"
+curl -b jar.txt "http://localhost:5000/api/auth/me"
+```
+
+If `NEON_AUTH_BASE_URL` is missing, auth routes return 503 with a configuration message. Automated tests do not call Neon’s live Auth service; they use local SQLite and unit checks.
 
 ### Backend Limitations
-The only API currently implemented is one to retrieve charging ports
+Charge-point retrieval (OCM proxy and DB) is the main data API. 
+Neon Auth is wired for backend testing and future protected routes. 
 
 How to start the frontend:
 

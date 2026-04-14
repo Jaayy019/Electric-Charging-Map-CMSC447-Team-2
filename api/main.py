@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from database import dispose_engine, engine, async_session_factory, ChargePoint, Connection
 from database.session import Base
+from auth_routes import router as auth_router
 from routes import router as db_router, charge_point_to_summary
 
 load_dotenv()
@@ -81,7 +82,6 @@ async def _save_to_local_db(charge_points: List[ChargePointSummary]) -> int:
     saved = 0
     async with async_session_factory() as session:
         for cp in charge_points:
-            # Check if this charge point already exists
             existing = await session.execute(select(ChargePoint).where(ChargePoint.id == cp.id))
             if existing.scalar_one_or_none() is not None:
                 continue
@@ -148,7 +148,6 @@ async def get_charge_points(
     Returns only essential information: port types, price, availability, location, etc.
     """
 
-    # Build query parameters for the external API
     params: dict = {"maxresults": 200}
 
     if latitude is not None and longitude is not None:
@@ -184,14 +183,12 @@ async def get_charge_points(
     result = get_data_from_api(OCM_API_KEY, EXTERNAL_API_URL, USER_AGENT, params)
 
     if isinstance(result, dict) and "error" in result:
-        # External API failed — try serving from local database
         logger.warning(
             "External API failed, falling back to local database: %s",
             result.get("error"),
         )
         return await _fallback_from_local_db()
 
-    # Transform raw data to simplified schema
     simplified_data, transform_error = transform_to_simplified_schema(result)
 
     if simplified_data is None:
@@ -202,7 +199,6 @@ async def get_charge_points(
             error=transform_error or "Failed to transform API data",
         )
 
-    # Save to local database in the background
     try:
         saved_count = await _save_to_local_db(simplified_data)
         if saved_count:
@@ -210,9 +206,29 @@ async def get_charge_points(
     except Exception:
         logger.exception("Failed to save to local database")
 
-    return DataResponse(
-        status="success", data=simplified_data, total=len(simplified_data), error=None
-    )
+    merged = {cp.id: cp for cp in simplified_data}
+    try:
+        cached = await _load_all_from_local_db()
+        for cp in cached:
+            if cp.id not in merged:
+                merged[cp.id] = cp
+    except Exception:
+        logger.exception("Failed to load cached data for merge")
+
+    all_data = list(merged.values())
+    return DataResponse(status="success", data=all_data, total=len(all_data), error=None)
+
+
+async def _load_all_from_local_db() -> List[ChargePointSummary]:
+    """Load all charge points from the local database."""
+    if engine is None:
+        return []
+
+    async with async_session_factory() as session:
+        stmt = select(ChargePoint).options(selectinload(ChargePoint.connections))
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+        return [charge_point_to_summary(r) for r in rows]
 
 
 async def _fallback_from_local_db() -> DataResponse:
@@ -247,6 +263,7 @@ async def _fallback_from_local_db() -> DataResponse:
 
 # Mount database-backed routes
 app.include_router(db_router)
+app.include_router(auth_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
