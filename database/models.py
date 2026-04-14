@@ -50,21 +50,6 @@ class Session(Base):
     user: Mapped[User] = relationship(back_populates="sessions")
 
 
-class Vehicle(Base):
-    __tablename__ = "vehicles"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    make: Mapped[str] = mapped_column(String)
-    model: Mapped[str] = mapped_column(String)
-    year: Mapped[int] = mapped_column(Integer)
-    port_type: Mapped[str] = mapped_column(String)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    # Relationships
-    user: Mapped[User] = relationship(back_populates="vehicles")
-
-
 class ChargePoint(Base):
     __tablename__ = "charge_points"
 
@@ -116,3 +101,43 @@ class Connection(Base):
 
     # Relationships
     charge_point: Mapped[ChargePoint] = relationship(back_populates="connections")
+
+
+class Account(Base):
+    """User account model."""
+    __tablename__ = "accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    password: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    vehicles: Mapped[List["Vehicle"]] = relationship(
+        "Vehicle",
+        back_populates="account",
+        cascade="all, delete-orphan"
+    )
+
+
+class Vehicle(Base):
+    """Vehicle model associated with an account."""
+    __tablename__ = "vehicles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    make: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    port_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    account: Mapped["Account"] = relationship(
+        "Account",
+        back_populates="vehicles"
+    )
