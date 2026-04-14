@@ -2,7 +2,7 @@ import {useState} from "react";
 
 function Login({ onLoginSuccess, goToSignUp, goToMap }) {
 
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   async function loginHandler(e) {
@@ -14,7 +14,7 @@ function Login({ onLoginSuccess, goToSignUp, goToMap }) {
       method: "POST",
       credentials: "include",
       headers: {"Content-Type" : "application/json"},
-      body: JSON.stringify({username, password})
+      body: JSON.stringify({email, password})
 
     });
 
@@ -59,11 +59,11 @@ function Login({ onLoginSuccess, goToSignUp, goToMap }) {
           <br/>
 
           <div class="input-group">
-            <label for="username" class="label">Username: </label>
+            <label for="email" class="label">Email: </label>
             <input
-              type = "username"
-              value = {username}
-              onChange={(e) => setUsername(e.target.value)}
+              type = "email"
+              value = {email}
+              onChange={(e) => setEmail(e.target.value)}
             ></input>
 
           </div>

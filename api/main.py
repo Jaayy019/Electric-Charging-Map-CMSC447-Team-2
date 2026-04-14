@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from api_get import get_data_from_api, transform_to_simplified_schema
 from models import ChargePointSummary
+from database.models import User, Session, Account, Vehicle, ChargePoint, Connection
 from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -55,7 +56,7 @@ app = FastAPI(
 # Enable CORS for frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -263,7 +264,7 @@ async def _fallback_from_local_db() -> DataResponse:
 
 # Mount database-backed routes
 app.include_router(db_router)
-app.include_router(auth_router)
+app.include_router(auth_router, prefix="/api/auth")
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
