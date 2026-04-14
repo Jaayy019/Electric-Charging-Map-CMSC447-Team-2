@@ -28,7 +28,6 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    # Relationships
     sessions: Mapped[List[Session]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -46,8 +45,21 @@ class Session(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime)
 
-    # Relationships
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class Vehicle(Base):
+    __tablename__ = "vehicles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    make: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    year: Mapped[int] = mapped_column(Integer)
+    port_type: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped[User] = relationship(back_populates="vehicles")
 
 
 class ChargePoint(Base):
@@ -56,7 +68,6 @@ class ChargePoint(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     uuid: Mapped[str] = mapped_column(String, unique=True, index=True)
 
-    # Location
     address: Mapped[str] = mapped_column(String, default="")
     town: Mapped[str] = mapped_column(String, default="")
     postcode: Mapped[str] = mapped_column(String, default="")
@@ -65,7 +76,6 @@ class ChargePoint(Base):
     longitude: Mapped[float] = mapped_column(Float)
     contact_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
-    # Details
     number_of_points: Mapped[int] = mapped_column(Integer, default=0)
     price: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     availability: Mapped[str] = mapped_column(String, default="Unknown")
@@ -74,10 +84,8 @@ class ChargePoint(Base):
     operator: Mapped[str] = mapped_column(String, default="Unknown")
     last_verified: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    # Metadata
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    # Relationships
     connections: Mapped[List[Connection]] = relationship(
         back_populates="charge_point", cascade="all, delete-orphan"
     )
@@ -99,45 +107,4 @@ class Connection(Base):
     status: Mapped[str] = mapped_column(String, default="Unknown")
     quantity: Mapped[int] = mapped_column(Integer, default=1)
 
-    # Relationships
     charge_point: Mapped[ChargePoint] = relationship(back_populates="connections")
-
-
-class Account(Base):
-    """User account model."""
-    __tablename__ = "accounts"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    password: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    # Relationship
-    vehicles: Mapped[List["Vehicle"]] = relationship(
-        "Vehicle",
-        back_populates="account",
-        cascade="all, delete-orphan"
-    )
-
-
-class Vehicle(Base):
-    """Vehicle model associated with an account."""
-    __tablename__ = "vehicles"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    account_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.id", ondelete="CASCADE"),
-        nullable=False
-    )
-    make: Mapped[str] = mapped_column(String(100), nullable=False)
-    model: Mapped[str] = mapped_column(String(100), nullable=False)
-    year: Mapped[int] = mapped_column(Integer, nullable=False)
-    port_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    # Relationship
-    account: Mapped["Account"] = relationship(
-        "Account",
-        back_populates="vehicles"
-    )

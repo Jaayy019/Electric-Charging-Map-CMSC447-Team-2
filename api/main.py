@@ -15,7 +15,6 @@ from pydantic import BaseModel
 from typing import Optional, List
 from api_get import get_data_from_api, transform_to_simplified_schema
 from models import ChargePointSummary
-from database.models import User, Session, Account, Vehicle, ChargePoint, Connection
 from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -53,10 +52,11 @@ app = FastAPI(
     lifespan=lifespan,  # lifespan of the app is the lifespan of the engine
 )
 
-# Enable CORS for frontend requests
+# CORS: explicit origins required when allow_credentials=True (cannot use "*").
+_cors = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[o.strip() for o in _cors.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -264,7 +264,7 @@ async def _fallback_from_local_db() -> DataResponse:
 
 # Mount database-backed routes
 app.include_router(db_router)
-app.include_router(auth_router, prefix="/api/auth")
+app.include_router(auth_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
