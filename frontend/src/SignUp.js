@@ -3,18 +3,19 @@ import {useState} from "react";
 function SignUp({ onLoginSuccess, goToLogin, goToMap }) {
 
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   async function signupHandler(e) {
 
     e.preventDefault();
 
-    const res = await fetch("http://localhost:5000/api/auth/sign-up", {
+    const res = await fetch("http://localhost:5000/api/auth/create-account", {
 
       method: "POST",
       credentials: "include",
       headers: {"Content-Type" : "application/json"},
-      body: JSON.stringify({username, password})
+      body: JSON.stringify({username, email, password})
 
     });
 
@@ -59,11 +60,20 @@ function SignUp({ onLoginSuccess, goToLogin, goToMap }) {
           <br/>
 
           <div class="input-group">
-            <label for="username" class="label">Username: </label>
+            <label class="label">Username: </label>
             <input
-              type = "username"
-              value = {username}
+              type="text"
+              value={username}
               onChange={(e) => setUsername(e.target.value)}
+            />
+          </div>
+
+          <div class="input-group">
+            <label for="email" class="label">Email: </label>
+            <input
+              type = "email"
+              value = {email}
+              onChange={(e) => setEmail(e.target.value)}
             ></input>
           </div>
 
