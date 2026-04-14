@@ -20,11 +20,6 @@ After tables exist, you can load sample rows into Postgres with:
 
 (from the repo root, with the venv activated). The script skips if `charge_points` already has data.
 
-BEFORE THE BACKEND IS RUN, FIRST INITIALIZE THE DATABASE:
-```bash
-python database/sessiob.py
-```
-
 To run the backend from the repo root:
 
 ```bash
