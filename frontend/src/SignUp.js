@@ -1,7 +1,6 @@
 import { useState } from "react";
 
 function SignUp({ onLoginSuccess, goToLogin, goToMap }) {
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
