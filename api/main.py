@@ -176,7 +176,8 @@ async def get_charge_points(
             dist,
         )
     else:
-        params["compact"] = "true"
+        params["distanceunit"] = "KM"
+        params["maxresults"] = 100
         params["verbose"] = "false"
         params["key"] = OCM_API_KEY
         logger.info("OCM fetch without location filter (maxresults=%s)", params.get("maxresults"))
