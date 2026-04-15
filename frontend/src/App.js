@@ -1,10 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MapView from "./MapView";
 import Login from "./Login";
 import SignUp from "./SignUp";
 
 function App() {
   const [view, setView] = useState('map'); 
+  const [user, setUser] = useState(null);
+
+  async function fetchUser() {
+
+    const res = await fetch("http://localhost:5000/api/auth/me", {
+
+      credentials: "include"
+
+    });
+
+    if (res.ok) {
+
+      const data = await res.json();
+      setUser(data);
+
+    } 
+    
+    else {
+
+      setUser(null);
+
+    }
+
+  }
+
+  useEffect(() => {
+
+    fetchUser();
+
+  }, []);
 
   async function handleLogout() {
   await fetch("http://localhost:5000/api/auth/sign-out", {
@@ -14,6 +44,7 @@ function App() {
 
   });
 
+    setUser(null);
     setView("login");
 
   }
@@ -21,7 +52,10 @@ function App() {
   if (view === 'login') {
     return (
       <Login
-        onLoginSuccess={() => setView('map')}
+        onLoginSuccess={async () => {
+          await fetchUser();
+          setView('map')
+        }}
         goToSignUp={() => setView('signup')}
         goToMap={() => setView('map')} 
       />
@@ -31,7 +65,10 @@ function App() {
   if (view === 'signup') {
     return (
       <SignUp
-        onLoginSuccess={() => setView('map')}
+        onLoginSuccess={async () => {
+          await fetchUser();
+          setView('map')
+        }}
         goToLogin={() => setView('login')}
         goToMap={() => setView('map')} 
       />
@@ -40,7 +77,9 @@ function App() {
 
   return (
     <div className="App">
-      <MapView goToLogin={() => setView('login')} 
+      <MapView 
+        user = {user}
+        goToLogin={() => setView('login')} 
         handleLogout={handleLogout}  
       />
     </div>

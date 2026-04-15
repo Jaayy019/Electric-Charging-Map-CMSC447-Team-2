@@ -128,7 +128,7 @@ function LoadMap() {
 
 }
 
-export default function MapView({ goToLogin, handleLogout}) {
+export default function MapView({ user, goToLogin, handleLogout}) {
 
   // Sets up the arrays to store station data
   const [stations, setStations] = useState([]);
@@ -155,42 +155,45 @@ export default function MapView({ goToLogin, handleLogout}) {
   return (
   <>
     {/* Login button on top-right corner, takes user to login page */}
-    <button 
-        onClick={goToLogin}
+    {!user && (
+      <button 
+          onClick={goToLogin}
+          style={{
+            position: "absolute",
+            top: "10px",
+            right: "20px",
+            zIndex: 1000,
+            padding: "10px 15px",
+            backgroundColor: "#3090ff",
+            color: "white",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer"
+          }}
+        >
+        Login
+      </button>
+    )}
+
+    {user && (
+      <button
+        onClick={handleLogout}
         style={{
           position: "absolute",
           top: "10px",
-          right: "100px",
+          right: "20px",
           zIndex: 1000,
           padding: "10px 15px",
-          backgroundColor: "#3090ff",
+          backgroundColor: "#ff4d4d",
           color: "white",
           border: "none",
           borderRadius: "5px",
           cursor: "pointer"
         }}
       >
-      Login
-    </button>
-
-    <button
-      onClick={handleLogout}
-      style={{
-        position: "absolute",
-        top: "10px",
-        right: "20px",
-        zIndex: 1000,
-        padding: "10px 15px",
-        backgroundColor: "#ff4d4d",
-        color: "white",
-        border: "none",
-        borderRadius: "5px",
-        cursor: "pointer"
-      }}
-    >
-      Logout
-    </button>
-
+        Logout
+      </button>
+    )}
 
     {/*Side panel*/}
     {selectedStation && (
