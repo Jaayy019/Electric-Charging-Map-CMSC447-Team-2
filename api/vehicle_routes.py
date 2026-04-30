@@ -9,6 +9,7 @@ API_KEY = os.getenv("VEHICLE_API_KEY")
 
 router = APIRouter(prefix="/api/vehicle", tags=["Vehicle"])
 
+
 @router.get("/makes")
 def get_all_makes():
     """
@@ -19,20 +20,22 @@ def get_all_makes():
         data = json.loads(response.read().decode())
     return data
 
+
 @router.get("/vehicles/models/{manufacturer}")
 async def get_models_for_make(manufacturer: str):
     """
     Fetches all vehicle models for a given manufacturer from the NHTSA API
-    
+
     Args:
         manufacturer: The manufacturer name (e.g., 'Toyota', 'Ford', 'BMW')
     """
     url = f"https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/{manufacturer}?format=json"
-    
+
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         response.raise_for_status()
         return response.json()
+
 
 @router.get("/electric-vehicles")
 async def get_electric_vehicles(
@@ -45,10 +48,10 @@ async def get_electric_vehicles(
 ):
     """
     Fetches electric vehicles from the API Ninjas Electric Vehicle API
-    
+
     All parameters are optional. You can filter by make, model, year range, or range.
     """
-    
+
     # Build query parameters, only including non-None values
     params = {}
     if make:
@@ -63,16 +66,12 @@ async def get_electric_vehicles(
         params["min_range"] = min_range
     if max_range:
         params["max_range"] = max_range
-    
-    headers = {
-        "X-Api-Key": API_KEY
-    }
-    
+
+    headers = {"X-Api-Key": API_KEY}
+
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            "https://api.api-ninjas.com/v1/electricvehicle",
-            params=params,
-            headers=headers
+            "https://api.api-ninjas.com/v1/electricvehicle", params=params, headers=headers
         )
         response.raise_for_status()
         return response.json()
