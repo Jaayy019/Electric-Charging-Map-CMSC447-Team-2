@@ -1,5 +1,5 @@
 //Imports the necessary leaflet map components
-import { MapContainer, TileLayer, Marker, useMap} from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap, Circle } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import chargerIcon from "./icons/marker.png"
@@ -104,7 +104,7 @@ function saveLocal(lat, lng, zoom) {
 
 }
 
-function LoadMap() {
+function LoadMap( {userLocation} ) {
 
   const map = useMap();
 
@@ -122,7 +122,13 @@ function LoadMap() {
 
     }
 
-  }, [map]);
+    else if (userLocation){
+
+      map.setView([userLocation.lat, userLocation.lng], 13);
+
+    }
+
+  }, [map, userLocation]);
 
   return null;
 
@@ -133,12 +139,14 @@ export default function MapView({ user, goToLogin, handleLogout}) {
   // Sets up the arrays to store station data
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
 
   // Gets the user location and then gets the stations
   useEffect(() => {
 
     requestUserLocation((lat, lng) => {
 
+      setUserLocation({lat, lng});
       fetchStationsNearby(lat, lng, setStations);
       
     });
@@ -334,8 +342,29 @@ export default function MapView({ user, goToLogin, handleLogout}) {
         noWrap={true}
       />
 
-      <LoadMap />
+      <LoadMap userLocation={userLocation} />
       <EventHandler />
+
+      {/* Blue dot showing the user's current location */}
+      {userLocation && (
+
+        <>
+
+          <Circle
+            center={[userLocation.lat, userLocation.lng]}
+            radius={40}
+            pathOptions={{ color: "#1a6fd4", fillColor: "#1a6fd4", fillOpacity: 1 }}
+          />
+
+          <Circle
+            center={[userLocation.lat, userLocation.lng]}
+            radius={600}
+            pathOptions={{ color: "#1a6fd4", fillColor: "#1a6fd4", fillOpacity: 0.15, weight: 1 }}
+          />
+
+        </>
+
+      )}
 
       {stations.map((station, idx) => (
       
