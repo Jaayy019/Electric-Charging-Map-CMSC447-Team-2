@@ -287,14 +287,10 @@ async def create_account(
 
 @router.get("/users/{user_id}/vehicles", response_model=list[VehicleResponse])
 async def list_vehicles(
-    user_id: int,
+    user_id: str,
     session: AsyncSession = Depends(get_session),
 ):
     """List all vehicles for a user."""
-    user = await session.execute(select(User).where(User.id == user_id))
-    if user.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="User not found")
-
     result = await session.execute(select(Vehicle).where(Vehicle.user_id == user_id))
     rows = result.scalars().all()
     return [
@@ -312,14 +308,10 @@ async def list_vehicles(
 
 @router.post("/users/{user_id}/vehicles", response_model=VehicleResponse, status_code=201)
 async def add_vehicle(
-    user_id: int,
+    user_id: str,
     data: VehicleCreate,
     session: AsyncSession = Depends(get_session),
 ):
-    """Add a vehicle to a user's account."""
-    user = await session.execute(select(User).where(User.id == user_id))
-    if user.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="User not found")
 
     vehicle = Vehicle(
         user_id=user_id,
@@ -344,7 +336,7 @@ async def add_vehicle(
 
 @router.put("/users/{user_id}/vehicles/{vehicle_id}", response_model=VehicleResponse)
 async def update_vehicle(
-    user_id: int,
+    user_id: str,
     vehicle_id: int,
     data: VehicleCreate,
     session: AsyncSession = Depends(get_session),
@@ -376,7 +368,7 @@ async def update_vehicle(
 
 @router.delete("/users/{user_id}/vehicles/{vehicle_id}", status_code=204)
 async def delete_vehicle(
-    user_id: int,
+    user_id: str,
     vehicle_id: int,
     session: AsyncSession = Depends(get_session),
 ):

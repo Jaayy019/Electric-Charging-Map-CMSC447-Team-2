@@ -64,7 +64,7 @@ function requestUserLocation(callback) {
 // Calls the OCM API and gets stations in a 20km radius based on geolocation
 function fetchStationsNearby(lat, lng, setStations) {
 
-  fetch(`http://localhost:5000/api/charge-points?latitude=${lat}&longitude=${lng}&distance=20`)
+  fetch(`/api/charge-points?latitude=${lat}&longitude=${lng}&distance=20`)
     .then(res => res.json())
     .then(data => setStations(data.data))
     .catch(err => console.error("Could not fetch station data:", err));
@@ -134,7 +134,7 @@ function LoadMap( {userLocation} ) {
 
 }
 
-export default function MapView({ user, goToLogin, handleLogout}) {
+export default function MapView({ user, goToLogin, handleLogout, goToVehicles }) {
 
   // Sets up the arrays to store station data
   const [stations, setStations] = useState([]);
@@ -200,6 +200,26 @@ export default function MapView({ user, goToLogin, handleLogout}) {
         }}
       >
         Logout
+      </button>
+    )}
+
+    {user && (
+      <button
+        onClick={goToVehicles}
+        style={{
+          position: "absolute",
+          top: "10px",
+          right: "110px",
+          zIndex: 1000,
+          padding: "10px 15px",
+          backgroundColor: "#1a6fd4",
+          color: "white",
+          border: "none",
+          borderRadius: "5px",
+          cursor: "pointer"
+        }}
+      >
+        My Vehicles
       </button>
     )}
 

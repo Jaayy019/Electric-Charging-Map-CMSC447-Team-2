@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import MapView from "./MapView";
 import Login from "./Login";
 import SignUp from "./SignUp";
+import VehicleManager from "./VehicleManager"
 
 function App() {
   const [view, setView] = useState('map'); 
@@ -9,7 +10,7 @@ function App() {
 
   async function fetchUser() {
 
-    const res = await fetch("http://localhost:5000/api/auth/me", {
+    const res = await fetch("/api/auth/me", {
 
       credentials: "include"
 
@@ -37,7 +38,7 @@ function App() {
   }, []);
 
   async function handleLogout() {
-  await fetch("http://localhost:5000/api/auth/sign-out", {
+  await fetch("/api/auth/sign-out", {
 
     method: "POST",
     credentials: "include"
@@ -75,12 +76,23 @@ function App() {
     );
   }
 
+
+  if (view === 'vehicles') {
+    return (
+      <VehicleManager
+        user={user}
+        goToMap={() => setView('map')}
+      />
+    );
+  }
+
   return (
     <div className="App">
       <MapView 
         user = {user}
         goToLogin={() => setView('login')} 
-        handleLogout={handleLogout}  
+        handleLogout={handleLogout}
+        goToVehicles={() => setView('vehicles')}
       />
     </div>
   );

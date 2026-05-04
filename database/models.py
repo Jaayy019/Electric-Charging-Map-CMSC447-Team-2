@@ -52,7 +52,7 @@ class Vehicle(Base):
     __tablename__ = "vehicles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(String, index=True)
     make: Mapped[str] = mapped_column(String)
     model: Mapped[str] = mapped_column(String)
     year: Mapped[int] = mapped_column(Integer)
