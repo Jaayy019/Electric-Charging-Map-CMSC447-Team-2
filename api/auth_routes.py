@@ -28,6 +28,7 @@ from database.models import User, Vehicle
 from database.session import get_session
 from models import AccountCreate, AccountResponse, VehicleCreate, VehicleResponse
 from neon_auth_jwt import try_decode_neon_jwt
+from vehicle_routes import canonical_manufacturer, is_valid_model
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 _bearer = HTTPBearer(auto_error=False)
@@ -310,6 +311,31 @@ async def list_vehicles(
     ]
 
 
+async def _validate_make_and_model(make: str, model: str) -> tuple[str, str]:
+    """
+    Validate make against the curated manufacturer list and model against NHTSA's models
+    for that make. Returns the canonically-cased make and the trimmed model. Raises 400
+    if either is invalid. If NHTSA is unreachable, model is accepted as-is.
+    """
+    canonical_make = canonical_manufacturer(make)
+    if canonical_make is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown manufacturer '{make}'. See GET /api/vehicle/manufacturers "
+                "for the supported list."
+            ),
+        )
+
+    valid = await is_valid_model(canonical_make, model)
+    if valid is False:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{model}' is not listed under {canonical_make}.",
+        )
+    return canonical_make, model.strip()
+
+
 @router.post("/users/{user_id}/vehicles", response_model=VehicleResponse, status_code=201)
 async def add_vehicle(
     user_id: int,
@@ -321,10 +347,12 @@ async def add_vehicle(
     if user.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    make, model = await _validate_make_and_model(data.make, data.model)
+
     vehicle = Vehicle(
         user_id=user_id,
-        make=data.make,
-        model=data.model,
+        make=make,
+        model=model,
         year=data.year,
         port_type=data.port_type,
     )
@@ -357,8 +385,10 @@ async def update_vehicle(
     if vehicle is None:
         raise HTTPException(status_code=404, detail="Vehicle not found")
 
-    vehicle.make = data.make
-    vehicle.model = data.model
+    make, model = await _validate_make_and_model(data.make, data.model)
+
+    vehicle.make = make
+    vehicle.model = model
     vehicle.year = data.year
     vehicle.port_type = data.port_type
     await session.commit()
