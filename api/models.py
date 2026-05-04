@@ -70,6 +70,7 @@ class VehicleResponse(BaseModel):
     year: int
     port_type: str
     created_at: datetime
+    is_active: bool = False
 
 
 class AccountCreate(BaseModel):

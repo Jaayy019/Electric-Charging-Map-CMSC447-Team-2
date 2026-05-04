@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from database.session import Base, get_session
 from database.models import User, Session, Vehicle
 
+from auth_routes import get_local_user_from_neon
+
 
 @pytest_asyncio.fixture()
 async def test_engine():
@@ -45,6 +47,44 @@ async def client(test_engine):
     from main import app
 
     app.dependency_overrides[get_session] = _override_session
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture()
+async def neon_me_client(test_engine):
+    """HTTP client with DB overrides plus authenticated Neon mirror user."""
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def _override_session():
+        async with factory() as session:
+            yield session
+
+    async def _override_neon_local_user():
+        async with factory() as session:
+            from sqlalchemy import select
+
+            r = await session.execute(select(User).where(User.email == "neon_me@test.com"))
+            user = r.scalar_one_or_none()
+            if user is None:
+                user = User(
+                    username="neon_me",
+                    email="neon_me@test.com",
+                    password_hash="fakehash",
+                )
+                session.add(user)
+                await session.commit()
+                await session.refresh(user)
+            return user
+
+    from main import app
+
+    app.dependency_overrides[get_session] = _override_session
+    app.dependency_overrides[get_local_user_from_neon] = _override_neon_local_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -432,3 +472,96 @@ async def test_vehicle_belongs_to_correct_user(client):
     # user_b cannot delete it
     resp = await client.delete(f"/api/auth/users/{user_b}/vehicles/{vid}")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_me_vehicles_active_and_list(neon_me_client):
+    """GET/POST /api/auth/me/vehicles and PUT .../active mark is_active."""
+    resp = await neon_me_client.get("/api/auth/me/vehicles")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    r = await neon_me_client.post("/api/auth/me/vehicles", json=VALID_VEHICLE)
+    assert r.status_code == 201
+    body = r.json()
+    vid = body["id"]
+    assert body["is_active"] is False
+
+    r = await neon_me_client.put(f"/api/auth/me/vehicles/{vid}/active")
+    assert r.status_code == 200
+    assert r.json()["is_active"] is True
+
+    r = await neon_me_client.get("/api/auth/me/vehicles")
+    rows = r.json()
+    assert len(rows) == 1
+    assert rows[0]["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_me_charge_points_uses_active_vehicle(neon_me_client):
+    """GET /api/auth/me/charge-points filters by active vehicle port compatibility."""
+    await neon_me_client.post("/api/auth/me/vehicles", json=VALID_VEHICLE)
+    r = await neon_me_client.get("/api/auth/me/vehicles")
+    vid = r.json()[0]["id"]
+    await neon_me_client.put(f"/api/auth/me/vehicles/{vid}/active")
+
+    base_loc = {
+        "address": "1 Test Rd",
+        "town": "T",
+        "postcode": "21250",
+        "country": "US",
+        "latitude": 39.2555,
+        "longitude": -76.7105,
+        "contact_email": None,
+    }
+    cp_ccs = {
+        "id": 92001,
+        "uuid": "me-station-ccs",
+        "location": dict(base_loc),
+        "connections": [
+            {
+                "id": 1,
+                "port_type": "CCS",
+                "power_kw": 150.0,
+                "voltage": 400,
+                "amps": 375,
+                "current_type": "DC",
+                "status": "Operational",
+                "quantity": 1,
+            }
+        ],
+        "number_of_points": 2,
+        "price": None,
+        "availability": "Operational",
+        "membership_required": False,
+        "access_key_required": False,
+        "operator": "Op",
+        "last_verified": None,
+    }
+    cp_chademo = {
+        **cp_ccs,
+        "id": 92002,
+        "uuid": "me-station-chademo",
+        "connections": [
+            {
+                "id": 2,
+                "port_type": "CHAdeMO",
+                "power_kw": 50.0,
+                "voltage": 500,
+                "amps": 125,
+                "current_type": "DC",
+                "status": "Operational",
+                "quantity": 1,
+            }
+        ],
+    }
+    assert (await neon_me_client.post("/api/db/charge-points", json=cp_ccs)).status_code == 201
+    assert (await neon_me_client.post("/api/db/charge-points", json=cp_chademo)).status_code == 201
+
+    resp = await neon_me_client.get(
+        "/api/auth/me/charge-points",
+        params={"latitude": 39.2555, "longitude": -76.7105, "radius_km": 10},
+    )
+    assert resp.status_code == 200
+    uuids = {x["uuid"] for x in resp.json()}
+    assert uuids == {"me-station-ccs"}
