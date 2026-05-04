@@ -35,7 +35,7 @@ async def test_session(test_engine):
 
 
 @pytest_asyncio.fixture()
-async def client(test_engine):
+async def client(test_engine, monkeypatch):
     factory = async_sessionmaker(test_engine, expire_on_commit=False)
 
     async def _override_session():
@@ -43,7 +43,14 @@ async def client(test_engine):
             yield session
 
     from main import app
+    import auth_routes
 
+    # Stub NHTSA model validation so tests don't depend on the network.
+    # Returns None (unreachable) which causes the validator to accept any model.
+    async def _passthrough_is_valid_model(make: str, model: str):
+        return None
+
+    monkeypatch.setattr(auth_routes, "is_valid_model", _passthrough_is_valid_model)
     app.dependency_overrides[get_session] = _override_session
 
     transport = ASGITransport(app=app)
@@ -392,6 +399,86 @@ async def test_delete_one_vehicle_keeps_others(client):
     remaining = resp.json()
     assert len(remaining) == 1
     assert remaining[0]["make"] == "Nissan"
+
+
+@pytest.mark.asyncio
+async def test_manufacturers_endpoint(client):
+    """GET /api/vehicle/manufacturers returns the curated list."""
+    resp = await client.get("/api/vehicle/manufacturers")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "manufacturers" in data
+    assert "Tesla" in data["manufacturers"]
+    assert "Ford" in data["manufacturers"]
+
+
+@pytest.mark.asyncio
+async def test_add_vehicle_rejects_unknown_make(client):
+    """Adding a vehicle with a make not in the curated list returns 400."""
+    user_id = await _create_user(client)
+    resp = await client.post(
+        f"/api/auth/users/{user_id}/vehicles",
+        json={"make": "FakeBrand", "model": "X1", "year": 2024, "port_type": "CCS"},
+    )
+    assert resp.status_code == 400
+    assert "Unknown manufacturer" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_add_vehicle_canonicalizes_make(client):
+    """Make is stored in canonical casing regardless of input casing/whitespace."""
+    user_id = await _create_user(client)
+    resp = await client.post(
+        f"/api/auth/users/{user_id}/vehicles",
+        json={"make": "  tesla  ", "model": "Model 3", "year": 2024, "port_type": "CCS"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["make"] == "Tesla"
+
+
+@pytest.mark.asyncio
+async def test_update_vehicle_rejects_unknown_make(client):
+    """Updating a vehicle with an invalid make returns 400."""
+    user_id = await _create_user(client)
+    resp = await client.post(f"/api/auth/users/{user_id}/vehicles", json=VALID_VEHICLE)
+    vehicle_id = resp.json()["id"]
+
+    resp = await client.put(
+        f"/api/auth/users/{user_id}/vehicles/{vehicle_id}",
+        json={"make": "NotARealBrand", "model": "X", "year": 2024, "port_type": "CCS"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_add_vehicle_rejects_invalid_model(test_engine, monkeypatch):
+    """When NHTSA returns a model list that doesn't include the requested model, return 400."""
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def _override_session():
+        async with factory() as session:
+            yield session
+
+    from main import app
+    import auth_routes
+
+    async def _strict_is_valid_model(make: str, model: str):
+        return False  # NHTSA reachable, model not in list
+
+    monkeypatch.setattr(auth_routes, "is_valid_model", _strict_is_valid_model)
+    app.dependency_overrides[get_session] = _override_session
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            await ac.post("/api/auth/create-account", json=VALID_ACCOUNT)
+            resp = await ac.post(
+                "/api/auth/users/1/vehicles",
+                json={"make": "Tesla", "model": "Bogus", "year": 2024, "port_type": "CCS"},
+            )
+            assert resp.status_code == 400
+            assert "not listed under Tesla" in resp.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio

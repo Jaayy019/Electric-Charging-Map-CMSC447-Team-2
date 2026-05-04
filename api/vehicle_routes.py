@@ -1,36 +1,112 @@
-import urllib.request
-import json
-import httpx
 import os
+from typing import Optional
 
-from fastapi import APIRouter, Query
+import httpx
+from fastapi import APIRouter, HTTPException, Query
 
 API_KEY = os.getenv("VEHICLE_API_KEY")
 
 router = APIRouter(prefix="/api/vehicle", tags=["Vehicle"])
 
 
-@router.get("/makes")
-def get_all_makes():
+# Curated list of major consumer auto manufacturers. NHTSA's getallmakes returns
+# thousands of LLCs / commercial-only brands, so we expose this set instead.
+MANUFACTURERS: list[str] = [
+    "Acura",
+    "Audi",
+    "BMW",
+    "Buick",
+    "Cadillac",
+    "Chevrolet",
+    "Chrysler",
+    "Dodge",
+    "Ford",
+    "Genesis",
+    "GMC",
+    "Honda",
+    "Hyundai",
+    "Infiniti",
+    "Jaguar",
+    "Jeep",
+    "Kia",
+    "Land Rover",
+    "Lexus",
+    "Lincoln",
+    "Lucid",
+    "Mazda",
+    "Mercedes-Benz",
+    "Mini",
+    "Mitsubishi",
+    "Nissan",
+    "Polestar",
+    "Porsche",
+    "Ram",
+    "Rivian",
+    "Subaru",
+    "Tesla",
+    "Toyota",
+    "Volkswagen",
+    "Volvo",
+]
+
+_MANUFACTURER_LOOKUP = {m.casefold(): m for m in MANUFACTURERS}
+
+
+def canonical_manufacturer(make: str) -> Optional[str]:
+    """Return the canonical-cased manufacturer name, or None if not in the curated list."""
+    if not make:
+        return None
+    return _MANUFACTURER_LOOKUP.get(make.strip().casefold())
+
+
+async def fetch_models_for_make(manufacturer: str) -> list[str]:
+    """Fetch model names for a manufacturer from NHTSA. Returns [] on network failure."""
+    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/{manufacturer}?format=json"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+    except (httpx.HTTPError, ValueError):
+        return []
+    return [r.get("Model_Name", "") for r in data.get("Results", []) if r.get("Model_Name")]
+
+
+async def is_valid_model(manufacturer: str, model: str) -> Optional[bool]:
     """
-    Fetches all vehicle makes from the NHTSA API
+    True if NHTSA lists `model` under `manufacturer`, False if it returned a list that
+    doesn't include the model, None if NHTSA was unreachable (caller should pass through).
     """
-    url = "https://vpic.nhtsa.dot.gov/api/vehicles/getallmakes?format=json"
-    with urllib.request.urlopen(url) as response:
-        data = json.loads(response.read().decode())
-    return data
+    if not model:
+        return False
+    models = await fetch_models_for_make(manufacturer)
+    if not models:
+        return None
+    target = model.strip().casefold()
+    return any(m.casefold() == target for m in models)
+
+
+@router.get("/manufacturers")
+def get_manufacturers() -> dict[str, list[str]]:
+    """Curated list of major consumer auto manufacturers."""
+    return {"manufacturers": MANUFACTURERS}
 
 
 @router.get("/vehicles/models/{manufacturer}")
 async def get_models_for_make(manufacturer: str):
     """
-    Fetches all vehicle models for a given manufacturer from the NHTSA API
+    Fetches all vehicle models for a given manufacturer from the NHTSA API.
 
-    Args:
-        manufacturer: The manufacturer name (e.g., 'Toyota', 'Ford', 'BMW')
+    The manufacturer must be one of the curated brands from `/api/vehicle/manufacturers`.
     """
-    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/{manufacturer}?format=json"
+    canonical = canonical_manufacturer(manufacturer)
+    if canonical is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown manufacturer '{manufacturer}'. See /api/vehicle/manufacturers.",
+        )
 
+    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/{canonical}?format=json"
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         response.raise_for_status()
