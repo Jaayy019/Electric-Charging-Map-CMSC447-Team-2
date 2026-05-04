@@ -17,17 +17,25 @@ import os
 from typing import Annotated, Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 
-from database.models import User, Vehicle
+from database.models import User, UserVehiclePreference, Vehicle
 from database.session import get_session
-from models import AccountCreate, AccountResponse, VehicleCreate, VehicleResponse
+from models import (
+    AccountCreate,
+    AccountResponse,
+    ChargePointSummary,
+    VehicleCreate,
+    VehicleResponse,
+)
 from neon_auth_jwt import try_decode_neon_jwt
+from neon_user_sync import ensure_local_user_for_neon
+from routes import query_charge_point_summaries
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 _bearer = HTTPBearer(auto_error=False)
@@ -230,6 +238,182 @@ async def sign_out() -> dict[str, str]:
     }
 
 
+# --- Authenticated mirror user (Neon Auth JWT/session -> local User for vehicles & stations) ---
+
+
+async def get_local_user_from_neon(
+    current: Annotated[dict[str, Any], Depends(get_current_user)],
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    try:
+        return await ensure_local_user_for_neon(session, current)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+async def _get_active_vehicle_id(session: AsyncSession, user_id: int) -> int | None:
+    pref = await session.get(UserVehiclePreference, user_id)
+    return pref.active_vehicle_id if pref else None
+
+
+def _vehicle_response(v: Vehicle, *, active_id: int | None) -> VehicleResponse:
+    return VehicleResponse(
+        id=v.id,
+        make=v.make,
+        model=v.model,
+        year=v.year,
+        port_type=v.port_type,
+        created_at=v.created_at,
+        is_active=(active_id is not None and v.id == active_id),
+    )
+
+
+@router.get("/me/vehicles", response_model=list[VehicleResponse])
+async def me_list_vehicles(
+    user: Annotated[User, Depends(get_local_user_from_neon)],
+    session: AsyncSession = Depends(get_session),
+):
+    """List vehicles for the authenticated Neon user (mirrored local account)."""
+    active_id = await _get_active_vehicle_id(session, user.id)
+    result = await session.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    rows = result.scalars().all()
+    return [_vehicle_response(v, active_id=active_id) for v in rows]
+
+
+@router.post("/me/vehicles", response_model=VehicleResponse, status_code=201)
+async def me_add_vehicle(
+    data: VehicleCreate,
+    user: Annotated[User, Depends(get_local_user_from_neon)],
+    session: AsyncSession = Depends(get_session),
+):
+    """Add a vehicle to the authenticated user's account."""
+    vehicle = Vehicle(
+        user_id=user.id,
+        make=data.make,
+        model=data.model,
+        year=data.year,
+        port_type=data.port_type,
+    )
+    session.add(vehicle)
+    await session.commit()
+    await session.refresh(vehicle)
+    active_id = await _get_active_vehicle_id(session, user.id)
+    return _vehicle_response(vehicle, active_id=active_id)
+
+
+@router.put("/me/vehicles/{vehicle_id}", response_model=VehicleResponse)
+async def me_update_vehicle(
+    vehicle_id: int,
+    data: VehicleCreate,
+    user: Annotated[User, Depends(get_local_user_from_neon)],
+    session: AsyncSession = Depends(get_session),
+):
+    """Update a vehicle owned by the authenticated user."""
+    result = await session.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+    )
+    vehicle = result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    vehicle.make = data.make
+    vehicle.model = data.model
+    vehicle.year = data.year
+    vehicle.port_type = data.port_type
+    await session.commit()
+    await session.refresh(vehicle)
+    active_id = await _get_active_vehicle_id(session, user.id)
+    return _vehicle_response(vehicle, active_id=active_id)
+
+
+@router.delete("/me/vehicles/{vehicle_id}", status_code=204)
+async def me_delete_vehicle(
+    vehicle_id: int,
+    user: Annotated[User, Depends(get_local_user_from_neon)],
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a vehicle owned by the authenticated user."""
+    result = await session.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+    )
+    vehicle = result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    await session.delete(vehicle)
+    await session.commit()
+
+
+@router.put("/me/vehicles/{vehicle_id}/active", response_model=VehicleResponse)
+async def me_set_active_vehicle(
+    vehicle_id: int,
+    user: Annotated[User, Depends(get_local_user_from_neon)],
+    session: AsyncSession = Depends(get_session),
+):
+    """Mark a saved vehicle as active for connector filtering / station queries."""
+    result = await session.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+    )
+    vehicle = result.scalar_one_or_none()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    pref = await session.get(UserVehiclePreference, user.id)
+    if pref is None:
+        pref = UserVehiclePreference(user_id=user.id, active_vehicle_id=vehicle.id)
+        session.add(pref)
+    else:
+        pref.active_vehicle_id = vehicle.id
+    await session.commit()
+    await session.refresh(vehicle)
+    return _vehicle_response(vehicle, active_id=vehicle.id)
+
+
+@router.get("/me/charge-points", response_model=list[ChargePointSummary])
+async def me_list_charge_points(
+    user: Annotated[User, Depends(get_local_user_from_neon)],
+    session: AsyncSession = Depends(get_session),
+    latitude: Optional[float] = Query(None, description="Map click / center latitude"),
+    longitude: Optional[float] = Query(None, description="Map click / center longitude"),
+    radius_km: Optional[float] = Query(
+        None, description="Search radius in km (default 10 if lat/lng set)"
+    ),
+    vehicle_id: Optional[int] = Query(
+        None,
+        description="Use this saved vehicle for compatibility; defaults to active vehicle",
+    ),
+    port_type: Optional[str] = Query(
+        None,
+        description="Optional connector filter when no vehicle context",
+    ),
+    min_power_kw: Optional[float] = Query(None, ge=0),
+    operational_only: bool = Query(False),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """
+    Charge points compatible with the user's active vehicle (or selected vehicle_id).
+
+    When no active vehicle and vehicle_id is omitted, results are not filtered by connector
+    unless `port_type` is provided.
+    """
+    active = await _get_active_vehicle_id(session, user.id)
+    vid = vehicle_id if vehicle_id is not None else active
+    return await query_charge_point_summaries(
+        session,
+        latitude=latitude,
+        longitude=longitude,
+        radius_km=radius_km,
+        port_type=port_type,
+        vehicle_id=vid,
+        vehicle_owner_user_id=user.id,
+        min_power_kw=min_power_kw,
+        operational_only=operational_only,
+        limit=limit,
+        offset=offset,
+    )
+
+
 # --- Local SQLite account / vehicle (development & tests; distinct from Neon paths) ---
 
 
@@ -287,14 +471,10 @@ async def create_account(
 
 @router.get("/users/{user_id}/vehicles", response_model=list[VehicleResponse])
 async def list_vehicles(
-    user_id: int,
+    user_id: str,
     session: AsyncSession = Depends(get_session),
 ):
     """List all vehicles for a user."""
-    user = await session.execute(select(User).where(User.id == user_id))
-    if user.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="User not found")
-
     result = await session.execute(select(Vehicle).where(Vehicle.user_id == user_id))
     rows = result.scalars().all()
     return [
@@ -312,14 +492,10 @@ async def list_vehicles(
 
 @router.post("/users/{user_id}/vehicles", response_model=VehicleResponse, status_code=201)
 async def add_vehicle(
-    user_id: int,
+    user_id: str,
     data: VehicleCreate,
     session: AsyncSession = Depends(get_session),
 ):
-    """Add a vehicle to a user's account."""
-    user = await session.execute(select(User).where(User.id == user_id))
-    if user.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="User not found")
 
     vehicle = Vehicle(
         user_id=user_id,
@@ -344,7 +520,7 @@ async def add_vehicle(
 
 @router.put("/users/{user_id}/vehicles/{vehicle_id}", response_model=VehicleResponse)
 async def update_vehicle(
-    user_id: int,
+    user_id: str,
     vehicle_id: int,
     data: VehicleCreate,
     session: AsyncSession = Depends(get_session),
@@ -376,7 +552,7 @@ async def update_vehicle(
 
 @router.delete("/users/{user_id}/vehicles/{vehicle_id}", status_code=204)
 async def delete_vehicle(
-    user_id: int,
+    user_id: str,
     vehicle_id: int,
     session: AsyncSession = Depends(get_session),
 ):

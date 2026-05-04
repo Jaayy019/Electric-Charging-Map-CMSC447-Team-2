@@ -7,7 +7,15 @@ from database.session import (
     get_session,
     async_session_factory,
 )
-from database.models import ChargePoint, Connection, Session, User, Vehicle
+from database.models import (
+    ChargePoint,
+    Connection,
+    ExternalIdentity,
+    Session,
+    User,
+    UserVehiclePreference,
+    Vehicle,
+)
 
 __all__ = [
     "Base",
@@ -17,7 +25,9 @@ __all__ = [
     "async_session_factory",
     "ChargePoint",
     "Connection",
+    "ExternalIdentity",
     "Session",
     "User",
+    "UserVehiclePreference",
     "Vehicle",
 ]

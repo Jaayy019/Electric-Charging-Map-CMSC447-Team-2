@@ -186,7 +186,7 @@ function SignUp({ onLoginSuccess, goToLogin, goToMap }) {
   async function signupHandler(e) {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost:5000/api/auth/sign-up", {
+      const res = await fetch("/api/auth/sign-up", {
 
         method: "POST",
         credentials: "include",

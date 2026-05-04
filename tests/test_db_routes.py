@@ -287,3 +287,126 @@ async def test_list_charge_points_accepts_geo_query_params(client):
     )
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_charge_points_geo_radius(client):
+    """Returns charge points within Haversine radius of center."""
+    center_lat, center_lng = 39.2555, -76.7105
+    nearby = {
+        **SAMPLE_CHARGE_POINT,
+        "id": 88001,
+        "uuid": "geo-near",
+        "location": {
+            **SAMPLE_CHARGE_POINT["location"],
+            "latitude": center_lat,
+            "longitude": center_lng,
+        },
+        "connections": [
+            {
+                **SAMPLE_CHARGE_POINT["connections"][0],
+                "id": 201,
+            }
+        ],
+    }
+    far = {
+        **SAMPLE_CHARGE_POINT,
+        "id": 88002,
+        "uuid": "geo-far",
+        "location": {
+            **SAMPLE_CHARGE_POINT["location"],
+            "latitude": 41.0,
+            "longitude": -74.0,
+        },
+        "connections": [
+            {
+                **SAMPLE_CHARGE_POINT["connections"][0],
+                "id": 202,
+            }
+        ],
+    }
+    await client.post("/api/db/charge-points", json=nearby)
+    await client.post("/api/db/charge-points", json=far)
+
+    resp = await client.get(
+        "/api/db/charge-points",
+        params={
+            "latitude": center_lat,
+            "longitude": center_lng,
+            "radius_km": 5,
+            "limit": 10,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["uuid"] == "geo-near"
+
+
+@pytest.mark.asyncio
+async def test_list_charge_points_vehicle_filter(client):
+    """Filters by saved vehicle port compatibility when vehicle_id is set."""
+    r_acc = await client.post(
+        "/api/auth/create-account",
+        json={
+            "username": "ownerveh",
+            "email": "ownerveh@example.com",
+            "password": "password123",
+        },
+    )
+    uid = r_acc.json()["id"]
+    r_v = await client.post(
+        f"/api/auth/users/{uid}/vehicles",
+        json={
+            "make": "Ford",
+            "model": "Mach-E",
+            "year": 2024,
+            "port_type": "CCS",
+        },
+    )
+    vehicle_id = r_v.json()["id"]
+
+    wrong_plug = {
+        **SAMPLE_CHARGE_POINT,
+        "id": 88010,
+        "uuid": "only-chademo",
+        "connections": [
+            {
+                "id": 99,
+                "port_type": "CHAdeMO",
+                "power_kw": 50.0,
+                "voltage": 500,
+                "amps": 125,
+                "current_type": "DC",
+                "status": "Operational",
+                "quantity": 1,
+            }
+        ],
+    }
+    ok_plug = {
+        **SAMPLE_CHARGE_POINT,
+        "id": 88011,
+        "uuid": "has-ccs",
+        "connections": [
+            {
+                "id": 100,
+                "port_type": "CCS",
+                "power_kw": 150.0,
+                "voltage": 400,
+                "amps": 375,
+                "current_type": "DC",
+                "status": "Operational",
+                "quantity": 2,
+            }
+        ],
+    }
+    await client.post("/api/db/charge-points", json=wrong_plug)
+    await client.post("/api/db/charge-points", json=ok_plug)
+
+    resp = await client.get(
+        "/api/db/charge-points",
+        params={"vehicle_id": vehicle_id, "limit": 20},
+    )
+    assert resp.status_code == 200
+    ids = {x["uuid"] for x in resp.json()}
+    assert ids == {"has-ccs"}
