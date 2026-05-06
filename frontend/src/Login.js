@@ -220,7 +220,7 @@ function Login({ onLoginSuccess, goToSignUp, goToMap }) {
     e.preventDefault();
     setError();
 
-    const res = await fetch("http://localhost:5000/api/auth/sign-in", {
+    const res = await fetch("/api/auth/sign-in", {
 
       method: "POST",
       credentials: "include",
