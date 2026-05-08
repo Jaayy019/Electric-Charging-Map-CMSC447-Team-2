@@ -209,12 +209,6 @@ async def get_charge_points(
     except Exception:
         logger.exception("Failed to save to local database")
 
-    try:
-        saved_count = await _save_to_local_db(simplified_data)
-        if saved_count:
-            logger.info("Saved %s new charge point(s) to local database", saved_count)
-    except Exception:
-        logger.exception("Failed to save to local database")
 
     return DataResponse(status="success", data=simplified_data, total=len(simplified_data), error=None)
 
