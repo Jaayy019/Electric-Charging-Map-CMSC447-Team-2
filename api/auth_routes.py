@@ -490,31 +490,6 @@ async def list_vehicles(
     ]
 
 
-async def _validate_make_and_model(make: str, model: str) -> tuple[str, str]:
-    """
-    Validate make against the curated manufacturer list and model against NHTSA's models
-    for that make. Returns the canonically-cased make and the trimmed model. Raises 400
-    if either is invalid. If NHTSA is unreachable, model is accepted as-is.
-    """
-    canonical_make = canonical_manufacturer(make)
-    if canonical_make is None:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unknown manufacturer '{make}'. See GET /api/vehicle/manufacturers "
-                "for the supported list."
-            ),
-        )
-
-    valid = await is_valid_model(canonical_make, model)
-    if valid is False:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Model '{model}' is not listed under {canonical_make}.",
-        )
-    return canonical_make, model.strip()
-
-
 @router.post("/users/{user_id}/vehicles", response_model=VehicleResponse, status_code=201)
 async def add_vehicle(
     user_id: str,
@@ -522,12 +497,10 @@ async def add_vehicle(
     session: AsyncSession = Depends(get_session),
 ):
 
-    make, model = await _validate_make_and_model(data.make, data.model)
-
     vehicle = Vehicle(
         user_id=user_id,
-        make=make,
-        model=model,
+        make=data.make,
+        model=data.model,
         year=data.year,
         port_type=data.port_type,
     )
@@ -560,10 +533,8 @@ async def update_vehicle(
     if vehicle is None:
         raise HTTPException(status_code=404, detail="Vehicle not found")
 
-    make, model = await _validate_make_and_model(data.make, data.model)
-
-    vehicle.make = make
-    vehicle.model = model
+    vehicle.make = data.make
+    vehicle.model = data.model
     vehicle.year = data.year
     vehicle.port_type = data.port_type
     await session.commit()
