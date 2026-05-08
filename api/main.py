@@ -209,10 +209,13 @@ async def get_charge_points(
     except Exception:
         logger.exception("Failed to save to local database")
 
-    return DataResponse(
-        status="success", data=simplified_data, total=len(simplified_data), error=None
-    )
 
+    return DataResponse(
+        status="success", 
+        data=simplified_data, 
+        total=len(simplified_data), 
+        error=None
+    )
 
 async def _load_all_from_local_db() -> List[ChargePointSummary]:
     """Load all charge points from the local database."""
