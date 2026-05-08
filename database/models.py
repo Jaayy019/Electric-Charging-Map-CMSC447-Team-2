@@ -64,7 +64,6 @@ class Vehicle(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-
 class ExternalIdentity(Base):
     """Links a Neon Auth (or other) subject to a local User row."""
 
