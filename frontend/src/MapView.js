@@ -14,11 +14,23 @@ import chargerNema14Icon from "./icons/marker_nema14.png"
 import chargerMultipleIcon from "./icons/marker_multi.png"
 import { useEffect, useState} from "react";
 
-// Smooth slide-in animation
+// Smooth slide-in animation for the station detail panel (right side)
 const panelAnimation =
 `@keyframes slideInPanel {
   0% {
     transform: translateX(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+ 
+// Slide-in animation for the vehicle selector panel (left side)
+@keyframes slideInLeft {
+  0% {
+    transform: translateX(-100%);
     opacity: 0;
   }
   100% {
@@ -178,6 +190,18 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
+ 
+  // Vehicle selector panel state
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false);
+ 
+  // List of the user's saved vehicles fetched from the backend
+  const [vehicles, setVehicles] = useState([]);
+ 
+  // The currently active vehicle id
+  const [activeVehicleId, setActiveVehicleId] = useState(null);
+ 
+  // True while the active vehicle PUT is in flight
+  const [settingActive, setSettingActive] = useState(false);
 
   // Gets the user location and then gets the stations
   useEffect(() => {
@@ -197,6 +221,87 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
   }, [stations]);
 
+  useEffect(() => {
+
+    if (!user) {
+
+      // Clear vehicle state on logout
+      setVehicles([]);
+      setActiveVehicleId(null);
+      return;
+
+    }
+
+    fetchVehicles();
+
+  }, [user]);
+
+  // Fetches all vehicles for the logged-in user and finds the active one
+  async function fetchVehicles() {
+ 
+    try {
+ 
+      const res = await fetch("/api/auth/me/vehicles", {
+ 
+        credentials: "include",
+ 
+      });
+ 
+      if (res.ok) {
+ 
+        const data = await res.json();
+        setVehicles(data);
+ 
+        // Find the active vehicle and store its id
+        const active = data.find((v) => v.is_active);
+ 
+        if (active) setActiveVehicleId(active.id);
+ 
+      }
+ 
+    } catch {
+ 
+      console.error("Could not fetch vehicles");
+ 
+    }
+ 
+  }
+ 
+  // Sets the selected vehicle as active via PUT /api/auth/me/vehicles/{id}/active
+  async function handleSetActiveVehicle(vehicleId) {
+ 
+    setSettingActive(true);
+ 
+    try {
+ 
+      const res = await fetch(`/api/auth/me/vehicles/${vehicleId}/active`, {
+ 
+        method: "PUT",
+        credentials: "include",
+ 
+      });
+ 
+      if (res.ok) {
+ 
+        setActiveVehicleId(vehicleId);
+ 
+      }
+ 
+    } catch {
+ 
+      console.error("Could not set active vehicle");
+ 
+    } finally {
+ 
+      setSettingActive(false);
+ 
+    }
+ 
+  }
+ 
+  // Gets the display name for the active vehicle
+  const activeVehicle = vehicles.find((v) => v.id === activeVehicleId);
+ 
 
   return (
   <>
@@ -259,6 +364,226 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
       >
         My Vehicles
       </button>
+    )}
+
+    {/* Car icon button - top left, only shown when logged in.
+    Toggles the vehicle selector panel. */}
+    {user && (
+      <button
+        onClick={() => setVehiclePanelOpen((prev) => !prev)}
+        title={activeVehicle ? `Active: ${activeVehicle.year} ${activeVehicle.make} ${activeVehicle.model}` : "Select vehicle"}
+        style={{
+          position: "absolute",
+          top: "80px",
+          left: "10px",
+          zIndex: 1000,
+          padding: "8px 12px",
+          backgroundColor: activeVehicle ? "#1a6fd4" : "white",
+          color: activeVehicle ? "white" : "#555",
+          border: "1px solid #ddd",
+          borderRadius: "8px",
+          cursor: "pointer",
+          fontSize: "18px",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.15)"
+        }}
+      >
+        {/* Car emoji as icon */}
+        🚗
+        {/* Show active vehicle name */}
+        {activeVehicle && (
+          <span style={{ fontSize: "12px", fontWeight: "500", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {activeVehicle.make} {activeVehicle.model}
+          </span>
+        )}
+      </button>
+    )}
+ 
+    {/* Vehicle selector panel - slides in from the left */}
+    {vehiclePanelOpen && user && (
+ 
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "300px",
+          height: "100vh",
+          backgroundColor: "#ffffff",
+          boxShadow: "4px 0 12px rgba(0,0,0,0.15)",
+          padding: "25px",
+          zIndex: 2000,
+          overflowY: "auto",
+          fontFamily: "'Inter', sans-serif",
+          animation: "slideInLeft 0.35s ease-out"
+        }}
+      >
+ 
+        {/* Close button */}
+        <button
+          onClick={() => setVehiclePanelOpen(false)}
+          style={{
+            position: "absolute",
+            top: "15px",
+            right: "15px",
+            background: "none",
+            border: "none",
+            fontSize: "22px",
+            cursor: "pointer",
+            color: "#555"
+          }}
+        >
+          X
+        </button>
+ 
+        {/* Panel title */}
+        <h2
+          style={{
+            marginTop: "10px",
+            marginBottom: "6px",
+            fontSize: "18px",
+            fontWeight: "600",
+            color: "#222"
+          }}
+        >
+          Active Vehicle
+        </h2>
+ 
+        <p style={{ fontSize: "13px", color: "#888", marginBottom: "20px" }}>
+          Select the vehicle you're driving to filter compatible chargers.
+        </p>
+ 
+        <hr style={{ margin: "0 0 20px", borderColor: "#eee" }} />
+ 
+        {/* No vehicles state */}
+        {vehicles.length === 0 && (
+ 
+          <div>
+ 
+            <p style={{ fontSize: "14px", color: "#999", textAlign: "center", marginBottom: "16px" }}>
+              No vehicles saved yet.
+            </p>
+ 
+            <button
+              onClick={() => { setVehiclePanelOpen(false); goToVehicles(); }}
+              style={{
+                width: "100%",
+                padding: "10px",
+                backgroundColor: "#1a6fd4",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: "500"
+              }}
+            >
+              Add a Vehicle
+            </button>
+ 
+          </div>
+ 
+        )}
+ 
+        {/* Vehicle dropdown */}
+        {vehicles.length > 0 && (
+ 
+          <div>
+ 
+            <label
+              style={{ fontSize: "12px", fontWeight: "500", color: "#555", display: "block", marginBottom: "6px" }}
+            >
+              Select vehicle
+            </label>
+ 
+            <select
+
+              value={activeVehicleId || ""}
+              onChange={(e) => {
+
+                const val = e.target.value;
+
+                if (!val) {
+
+                  setActiveVehicleId(null);
+                  return;
+
+                }
+
+                const id = parseInt(val, 10);
+                handleSetActiveVehicle(id);
+
+              }}
+              disabled={settingActive}
+              
+              style={{
+                width: "100%",
+                height: "40px",
+                border: "1px solid #ddd",
+                borderRadius: "8px",
+                padding: "0 10px",
+                fontSize: "14px",
+                color: "#111",
+                backgroundColor: settingActive ? "#f0f0f0" : "#fafafa",
+                cursor: settingActive ? "not-allowed" : "pointer",
+                outline: "none"
+              }}
+            >
+ 
+              <option value="">No active vehicle</option>
+ 
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.year} {v.make} {v.model} — {v.port_type}
+                </option>
+              ))}
+ 
+            </select>
+ 
+            {/* Show the active vehicle's port type below the dropdown */}
+            {activeVehicle && (
+ 
+              <p style={{ fontSize: "13px", color: "#1a6fd4", marginTop: "10px", fontWeight: "500" }}>
+                Filtering for {activeVehicle.port_type} connectors
+              </p>
+ 
+            )}
+ 
+            {settingActive && (
+ 
+              <p style={{ fontSize: "12px", color: "#aaa", marginTop: "8px" }}>
+                Updating...
+              </p>
+ 
+            )}
+ 
+          </div>
+ 
+        )}
+ 
+        {/* Link to manage vehicles */}
+        <button
+          onClick={() => { setVehiclePanelOpen(false); goToVehicles(); }}
+          style={{
+            marginTop: "24px",
+            width: "100%",
+            padding: "10px",
+            backgroundColor: "white",
+            color: "#1a6fd4",
+            border: "1px solid #ddd",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontSize: "13px",
+            fontWeight: "500"
+          }}
+        >
+          Manage My Vehicles
+        </button>
+ 
+      </div>
+ 
     )}
 
     {/*Side panel*/}
