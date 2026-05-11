@@ -33,10 +33,7 @@ async def get_models_for_make(manufacturer: str):
     """
     Fetches all vehicle models for a given manufacturer from the NHTSA API.
     """
-    url = (
-        f"https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake"
-        f"/{manufacturer}?format=json"
-    )
+    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/{manufacturer}?format=json"
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         response.raise_for_status()
