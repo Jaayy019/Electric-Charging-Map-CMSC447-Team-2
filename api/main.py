@@ -166,7 +166,7 @@ async def get_charge_points(
 
         # Required by OCM or returns default parameters
         params["distanceunit"] = "KM"
-        params["maxresults"] = 100
+        params["maxresults"] = 1000
         params["verbose"] = "false"
         params["key"] = OCM_API_KEY
 
@@ -178,7 +178,7 @@ async def get_charge_points(
         )
     else:
         params["distanceunit"] = "KM"
-        params["maxresults"] = 100
+        params["maxresults"] = 1000
         params["verbose"] = "false"
         params["key"] = OCM_API_KEY
         logger.info("OCM fetch without location filter (maxresults=%s)", params.get("maxresults"))
@@ -209,14 +209,9 @@ async def get_charge_points(
     except Exception:
         logger.exception("Failed to save to local database")
 
-    try:
-        saved_count = await _save_to_local_db(simplified_data)
-        if saved_count:
-            logger.info("Saved %s new charge point(s) to local database", saved_count)
-    except Exception:
-        logger.exception("Failed to save to local database")
-
-    return DataResponse(status="success", data=simplified_data, total=len(simplified_data), error=None)
+    return DataResponse(
+        status="success", data=simplified_data, total=len(simplified_data), error=None
+    )
 
 
 async def _load_all_from_local_db() -> List[ChargePointSummary]:

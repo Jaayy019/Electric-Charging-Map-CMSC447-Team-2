@@ -2,7 +2,16 @@
 import { MapContainer, TileLayer, Marker, useMap, Circle } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import chargerIcon from "./icons/marker.png"
+import chargerIcon from "./icons/marker_default.png"
+import chargerType1Icon from "./icons/marker_type1.png"
+import chargerType2Icon from "./icons/marker_type2.png"
+import chargerTeslaIcon from "./icons/marker_tesla.png"
+import chargerCcs1Icon from "./icons/marker_ccs1.png"
+import chargerCcs2Icon from "./icons/marker_ccs2.png"
+import chargerChademoIcon from "./icons/marker_chademo.png"
+import chargerNema5Icon from "./icons/marker_nema5.png"
+import chargerNema14Icon from "./icons/marker_nema14.png"
+import chargerMultipleIcon from "./icons/marker_multi.png"
 import { useEffect, useState} from "react";
 
 // Smooth slide-in animation
@@ -22,14 +31,43 @@ const styleTag = document.createElement("style");
 styleTag.innerHTML = panelAnimation;
 document.head.appendChild(styleTag);
 
-const chargeIcon = L.icon({
+const chargeIcon = {
 
   iconUrl: chargerIcon,
   iconSize: [40, 40],      
   iconAnchor: [20, 40],    
   popupAnchor: [0, -40]
 
-});
+};
+
+function getMarkerIcon(type) {
+    const iconUrls = {
+        'NACS / Tesla Supercharger': chargerTeslaIcon,
+        'Tesla (Model S/X)': chargerTeslaIcon,
+        'Type 1 (J1772)': chargerType1Icon,
+        'Type 2 (Socket Only)': chargerType2Icon,
+        'CCS (Type 1)': chargerCcs1Icon,
+        'CCS (Type 2)': chargerCcs2Icon,
+        'CHAdeMO': chargerChademoIcon,
+        'NEMA 5-15R': chargerNema5Icon,
+        'NEMA 5-20R': chargerNema5Icon,
+        'NEMA 14-50': chargerNema14Icon,
+        'Multiple': chargerMultipleIcon,
+        'default': chargerIcon
+    };
+
+    return L.icon({
+        ...chargeIcon,
+        iconUrl: iconUrls[type] || iconUrls['default']
+    });
+}
+
+const hasMultipleTypes = (station) => {
+
+  if(station.connections?.[1]?.port_type) return true
+  else return false
+};
+
 
 function requestUserLocation(callback) {
 
@@ -387,23 +425,22 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
       )}
 
       {stations.map((station, idx) => (
-      
         <Marker
           key = {idx}
           position={[
               station.location.latitude,
               station.location.longitude
             ]}
-            icon = {chargeIcon}
+            icon = {hasMultipleTypes(station)
+                      ? getMarkerIcon('Multiple')
+                      : getMarkerIcon(station.connections?.[0]?.port_type)}
 
           eventHandlers={{
             click: () => setSelectedStation(station)
           }}
         >
         </Marker>
-        
-
-    ))}
+      ))}
 
     </MapContainer>
   </>

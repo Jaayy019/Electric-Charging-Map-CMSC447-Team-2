@@ -1,83 +1,77 @@
-"""External EV catalog (API Ninjas). Requires VEHICLE_API_KEY."""
+import urllib.request
+import json
+import httpx
+import os
 
-from __future__ import annotations
+from fastapi import APIRouter, Query
 
-from typing import Optional
-
-from fastapi import APIRouter, HTTPException, Query
-
-from api_ninjas_vehicle import ninjas_get_json, require_vehicle_api_key
+API_KEY = os.getenv("VEHICLE_API_KEY")
 
 router = APIRouter(prefix="/api/vehicle", tags=["Vehicle"])
 
 
-@router.get("/electric-makes")
-async def get_electric_makes():
-    """All electric vehicle manufacturers (API Ninjas)."""
-    return await ninjas_get_json("electricvehiclemakes")
-
-
-@router.get("/electric-models")
-async def get_electric_models(
-    make: str = Query(..., description="Manufacturer slug or name (e.g. tesla)"),
-    year: Optional[int] = Query(None, description="Optional model year filter"),
-):
-    """Electric vehicle models for a make (API Ninjas)."""
-    params: dict = {"make": make}
-    if year is not None:
-        params["year"] = year
-    return await ninjas_get_json("electricvehiclemodels", params)
-
-
 @router.get("/makes")
-async def get_all_makes_alias():
-    """Alias for `/electric-makes` (EV-only; replaces legacy NHTSA list)."""
-    return await get_electric_makes()
+def get_all_makes():
+    """
+    Fetches all vehicle makes from the NHTSA API
+    """
+    url = "https://vpic.nhtsa.dot.gov/api/vehicles/getallmakes?format=json"
+    with urllib.request.urlopen(url) as response:
+        data = json.loads(response.read().decode())
+    return data
 
 
 @router.get("/vehicles/models/{manufacturer}")
-async def get_models_for_make_alias(manufacturer: str):
-    """Alias for `/electric-models?make={manufacturer}` (EV-only)."""
-    return await get_electric_models(make=manufacturer)
+async def get_models_for_make(manufacturer: str):
+    """
+    Fetches all vehicle models for a given manufacturer from the NHTSA API
+
+    Args:
+        manufacturer: The manufacturer name (e.g., 'Toyota', 'Ford', 'BMW')
+    """
+    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/{manufacturer}?format=json"
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.json()
 
 
 @router.get("/electric-vehicles")
 async def get_electric_vehicles(
-    make: Optional[str] = Query(None, description="Vehicle manufacturer (e.g. tesla)"),
-    model: Optional[str] = Query(None, description="Vehicle model (partial match)"),
-    min_year: Optional[int] = Query(None, description="Minimum vehicle model year"),
-    max_year: Optional[int] = Query(None, description="Maximum vehicle model year"),
-    min_range: Optional[int] = Query(None, description="Minimum range in kilometers"),
-    max_range: Optional[int] = Query(None, description="Maximum range in kilometers"),
+    make: str = Query(None, description="Vehicle manufacturer (e.g. tesla or nissan)"),
+    model: str = Query(None, description="Vehicle model (supports partial matching)"),
+    min_year: int = Query(None, description="Minimum vehicle model year"),
+    max_year: int = Query(None, description="Maximum vehicle model year"),
+    min_range: int = Query(None, description="Minimum range in kilometers"),
+    max_range: int = Query(None, description="Maximum range in kilometers"),
 ):
     """
-    Electric vehicle specs from API Ninjas.
+    Fetches electric vehicles from the API Ninjas Electric Vehicle API
 
-    API Ninjas requires at least one filter besides pagination — we mirror that rule.
+    All parameters are optional. You can filter by make, model, year range, or range.
     """
-    require_vehicle_api_key()
 
-    params: dict = {}
+    # Build query parameters, only including non-None values
+    params = {}
     if make:
         params["make"] = make
     if model:
         params["model"] = model
-    if min_year is not None:
+    if min_year:
         params["min_year"] = min_year
-    if max_year is not None:
+    if max_year:
         params["max_year"] = max_year
-    if min_range is not None:
+    if min_range:
         params["min_range"] = min_range
-    if max_range is not None:
+    if max_range:
         params["max_range"] = max_range
 
-    if not params:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Provide at least one filter: make, model, min_year, max_year, "
-                "min_range, or max_range."
-            ),
-        )
+    headers = {"X-Api-Key": API_KEY}
 
-    return await ninjas_get_json("electricvehicle", params)
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://api.api-ninjas.com/v1/electricvehicle", params=params, headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
