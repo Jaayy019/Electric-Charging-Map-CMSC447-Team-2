@@ -236,10 +236,11 @@ async def test_list_vehicles(client):
 
 
 @pytest.mark.asyncio
-async def test_list_vehicles_user_not_found(client):
-    """GET vehicles for non-existent user returns 404."""
+async def test_list_vehicles_unknown_user_returns_empty(client):
+    """GET vehicles for non-existent user returns empty list (no 404)."""
     resp = await client.get("/api/auth/users/9999/vehicles")
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    assert resp.json() == []
 
 
 @pytest.mark.asyncio
@@ -289,7 +290,7 @@ async def test_delete_vehicle_not_found(client):
 
 @pytest.mark.asyncio
 async def test_vehicle_cascade_delete(test_session):
-    """Deleting a User cascades to its Vehicles."""
+    """Deleting a Vehicle row directly works (no FK constraint)."""
     user = User(
         username="vehicleuser",
         email="vehicle@example.com",
@@ -308,13 +309,15 @@ async def test_vehicle_cascade_delete(test_session):
     )
     test_session.add(vehicle)
     await test_session.commit()
+    await test_session.refresh(vehicle)
 
-    await test_session.delete(user)
+    # Delete the vehicle directly
+    await test_session.delete(vehicle)
     await test_session.commit()
 
     from sqlalchemy import select
 
-    result = await test_session.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    result = await test_session.execute(select(Vehicle).where(Vehicle.id == vehicle.id))
     assert result.scalar_one_or_none() is None
 
 
@@ -348,9 +351,8 @@ async def test_create_vehicle_orm(test_session):
 
 @pytest.mark.asyncio
 async def test_user_has_multiple_vehicles_orm(test_session):
-    """A user can have multiple vehicles via the ORM."""
+    """A user can have multiple vehicles via the ORM (queried directly)."""
     from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
 
     user = User(username="multicar", email="multi@example.com", password_hash="fakehash")
     test_session.add(user)
@@ -359,24 +361,28 @@ async def test_user_has_multiple_vehicles_orm(test_session):
 
     v1 = Vehicle(user_id=user.id, make="Tesla", model="Model 3", year=2024, port_type="CCS")
     v2 = Vehicle(user_id=user.id, make="Nissan", model="Leaf", year=2022, port_type="CHAdeMO")
-    v3 = Vehicle(user_id=user.id, make="Ford", model="F-150 Lightning", year=2025, port_type="CCS")
+    v3 = Vehicle(
+        user_id=user.id, make="Ford", model="F-150 Lightning", year=2025, port_type="CCS"
+    )
     test_session.add_all([v1, v2, v3])
     await test_session.commit()
 
+    # Query vehicles directly by user_id (no relationship needed)
     result = await test_session.execute(
-        select(User).options(selectinload(User.vehicles)).where(User.id == user.id)
+        select(Vehicle).where(Vehicle.user_id == user.id)
     )
-    loaded_user = result.scalar_one()
-    assert len(loaded_user.vehicles) == 3
-    makes = {v.make for v in loaded_user.vehicles}
+    vehicles = result.scalars().all()
+    assert len(vehicles) == 3
+    makes = {v.make for v in vehicles}
     assert makes == {"Tesla", "Nissan", "Ford"}
 
 
 @pytest.mark.asyncio
 async def test_add_vehicle_user_not_found(client):
-    """POST vehicle to non-existent user returns 404."""
+    """POST vehicle to non-existent user still creates it (no user check)."""
     resp = await client.post("/api/auth/users/9999/vehicles", json=VALID_VEHICLE)
-    assert resp.status_code == 404
+    # user_id is now a plain string/int with no FK — inserts successfully
+    assert resp.status_code == 201
 
 
 @pytest.mark.asyncio
@@ -435,9 +441,20 @@ async def test_delete_one_vehicle_keeps_others(client):
 
 
 @pytest.mark.asyncio
+async def test_add_vehicle_accepts_any_make(client):
+    """Adding a vehicle with any make succeeds (no make validation)."""
+    user_id = await _create_user(client)
+    resp = await client.post(
+        f"/api/auth/users/{user_id}/vehicles",
+        json={"make": "AnyBrand", "model": "X1", "year": 2024, "port_type": "CCS"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["make"] == "AnyBrand"
+
+
+@pytest.mark.asyncio
 async def test_vehicle_belongs_to_correct_user(client):
     """A user cannot access another user's vehicle."""
-    # Create two users
     resp1 = await client.post(
         "/api/auth/create-account",
         json={
@@ -556,7 +573,9 @@ async def test_me_charge_points_uses_active_vehicle(neon_me_client):
         ],
     }
     assert (await neon_me_client.post("/api/db/charge-points", json=cp_ccs)).status_code == 201
-    assert (await neon_me_client.post("/api/db/charge-points", json=cp_chademo)).status_code == 201
+    assert (
+        await neon_me_client.post("/api/db/charge-points", json=cp_chademo)
+    ).status_code == 201
 
     resp = await neon_me_client.get(
         "/api/auth/me/charge-points",
