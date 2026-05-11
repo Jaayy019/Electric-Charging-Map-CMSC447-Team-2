@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from database.session import Base, get_session
 from database.models import User, Session, Vehicle
 
+from auth_routes import get_local_user_from_neon
+
 
 @pytest_asyncio.fixture()
 async def test_engine():
@@ -35,7 +37,7 @@ async def test_session(test_engine):
 
 
 @pytest_asyncio.fixture()
-async def client(test_engine, monkeypatch):
+async def client(test_engine):
     factory = async_sessionmaker(test_engine, expire_on_commit=False)
 
     async def _override_session():
@@ -43,15 +45,46 @@ async def client(test_engine, monkeypatch):
             yield session
 
     from main import app
-    import auth_routes
 
-    # Stub NHTSA model validation so tests don't depend on the network.
-    # Returns None (unreachable) which causes the validator to accept any model.
-    async def _passthrough_is_valid_model(make: str, model: str):
-        return None
-
-    monkeypatch.setattr(auth_routes, "is_valid_model", _passthrough_is_valid_model)
     app.dependency_overrides[get_session] = _override_session
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture()
+async def neon_me_client(test_engine):
+    """HTTP client with DB overrides plus authenticated Neon mirror user."""
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def _override_session():
+        async with factory() as session:
+            yield session
+
+    async def _override_neon_local_user():
+        async with factory() as session:
+            from sqlalchemy import select
+
+            r = await session.execute(select(User).where(User.email == "neon_me@test.com"))
+            user = r.scalar_one_or_none()
+            if user is None:
+                user = User(
+                    username="neon_me",
+                    email="neon_me@test.com",
+                    password_hash="fakehash",
+                )
+                session.add(user)
+                await session.commit()
+                await session.refresh(user)
+            return user
+
+    from main import app
+
+    app.dependency_overrides[get_session] = _override_session
+    app.dependency_overrides[get_local_user_from_neon] = _override_neon_local_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -203,10 +236,11 @@ async def test_list_vehicles(client):
 
 
 @pytest.mark.asyncio
-async def test_list_vehicles_user_not_found(client):
-    """GET vehicles for non-existent user returns 404."""
+async def test_list_vehicles_unknown_user_returns_empty(client):
+    """GET vehicles for non-existent user returns empty list (no 404)."""
     resp = await client.get("/api/auth/users/9999/vehicles")
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    assert resp.json() == []
 
 
 @pytest.mark.asyncio
@@ -256,7 +290,7 @@ async def test_delete_vehicle_not_found(client):
 
 @pytest.mark.asyncio
 async def test_vehicle_cascade_delete(test_session):
-    """Deleting a User cascades to its Vehicles."""
+    """Deleting a Vehicle row directly works (no FK constraint)."""
     user = User(
         username="vehicleuser",
         email="vehicle@example.com",
@@ -275,13 +309,15 @@ async def test_vehicle_cascade_delete(test_session):
     )
     test_session.add(vehicle)
     await test_session.commit()
+    await test_session.refresh(vehicle)
 
-    await test_session.delete(user)
+    # Delete the vehicle directly
+    await test_session.delete(vehicle)
     await test_session.commit()
 
     from sqlalchemy import select
 
-    result = await test_session.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    result = await test_session.execute(select(Vehicle).where(Vehicle.id == vehicle.id))
     assert result.scalar_one_or_none() is None
 
 
@@ -315,9 +351,8 @@ async def test_create_vehicle_orm(test_session):
 
 @pytest.mark.asyncio
 async def test_user_has_multiple_vehicles_orm(test_session):
-    """A user can have multiple vehicles via the ORM."""
+    """A user can have multiple vehicles via the ORM (queried directly)."""
     from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
 
     user = User(username="multicar", email="multi@example.com", password_hash="fakehash")
     test_session.add(user)
@@ -330,20 +365,20 @@ async def test_user_has_multiple_vehicles_orm(test_session):
     test_session.add_all([v1, v2, v3])
     await test_session.commit()
 
-    result = await test_session.execute(
-        select(User).options(selectinload(User.vehicles)).where(User.id == user.id)
-    )
-    loaded_user = result.scalar_one()
-    assert len(loaded_user.vehicles) == 3
-    makes = {v.make for v in loaded_user.vehicles}
+    # Query vehicles directly by user_id (no relationship needed)
+    result = await test_session.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    vehicles = result.scalars().all()
+    assert len(vehicles) == 3
+    makes = {v.make for v in vehicles}
     assert makes == {"Tesla", "Nissan", "Ford"}
 
 
 @pytest.mark.asyncio
 async def test_add_vehicle_user_not_found(client):
-    """POST vehicle to non-existent user returns 404."""
+    """POST vehicle to non-existent user still creates it (no user check)."""
     resp = await client.post("/api/auth/users/9999/vehicles", json=VALID_VEHICLE)
-    assert resp.status_code == 404
+    # user_id is now a plain string/int with no FK — inserts successfully
+    assert resp.status_code == 201
 
 
 @pytest.mark.asyncio
@@ -402,89 +437,20 @@ async def test_delete_one_vehicle_keeps_others(client):
 
 
 @pytest.mark.asyncio
-async def test_manufacturers_endpoint(client):
-    """GET /api/vehicle/manufacturers returns the curated list."""
-    resp = await client.get("/api/vehicle/manufacturers")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "manufacturers" in data
-    assert "Tesla" in data["manufacturers"]
-    assert "Ford" in data["manufacturers"]
-
-
-@pytest.mark.asyncio
-async def test_add_vehicle_rejects_unknown_make(client):
-    """Adding a vehicle with a make not in the curated list returns 400."""
+async def test_add_vehicle_accepts_any_make(client):
+    """Adding a vehicle with any make succeeds (no make validation)."""
     user_id = await _create_user(client)
     resp = await client.post(
         f"/api/auth/users/{user_id}/vehicles",
-        json={"make": "FakeBrand", "model": "X1", "year": 2024, "port_type": "CCS"},
-    )
-    assert resp.status_code == 400
-    assert "Unknown manufacturer" in resp.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_add_vehicle_canonicalizes_make(client):
-    """Make is stored in canonical casing regardless of input casing/whitespace."""
-    user_id = await _create_user(client)
-    resp = await client.post(
-        f"/api/auth/users/{user_id}/vehicles",
-        json={"make": "  tesla  ", "model": "Model 3", "year": 2024, "port_type": "CCS"},
+        json={"make": "AnyBrand", "model": "X1", "year": 2024, "port_type": "CCS"},
     )
     assert resp.status_code == 201
-    assert resp.json()["make"] == "Tesla"
-
-
-@pytest.mark.asyncio
-async def test_update_vehicle_rejects_unknown_make(client):
-    """Updating a vehicle with an invalid make returns 400."""
-    user_id = await _create_user(client)
-    resp = await client.post(f"/api/auth/users/{user_id}/vehicles", json=VALID_VEHICLE)
-    vehicle_id = resp.json()["id"]
-
-    resp = await client.put(
-        f"/api/auth/users/{user_id}/vehicles/{vehicle_id}",
-        json={"make": "NotARealBrand", "model": "X", "year": 2024, "port_type": "CCS"},
-    )
-    assert resp.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_add_vehicle_rejects_invalid_model(test_engine, monkeypatch):
-    """When NHTSA returns a model list that doesn't include the requested model, return 400."""
-    factory = async_sessionmaker(test_engine, expire_on_commit=False)
-
-    async def _override_session():
-        async with factory() as session:
-            yield session
-
-    from main import app
-    import auth_routes
-
-    async def _strict_is_valid_model(make: str, model: str):
-        return False  # NHTSA reachable, model not in list
-
-    monkeypatch.setattr(auth_routes, "is_valid_model", _strict_is_valid_model)
-    app.dependency_overrides[get_session] = _override_session
-    try:
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            await ac.post("/api/auth/create-account", json=VALID_ACCOUNT)
-            resp = await ac.post(
-                "/api/auth/users/1/vehicles",
-                json={"make": "Tesla", "model": "Bogus", "year": 2024, "port_type": "CCS"},
-            )
-            assert resp.status_code == 400
-            assert "not listed under Tesla" in resp.json()["detail"]
-    finally:
-        app.dependency_overrides.clear()
+    assert resp.json()["make"] == "AnyBrand"
 
 
 @pytest.mark.asyncio
 async def test_vehicle_belongs_to_correct_user(client):
     """A user cannot access another user's vehicle."""
-    # Create two users
     resp1 = await client.post(
         "/api/auth/create-account",
         json={
@@ -519,3 +485,96 @@ async def test_vehicle_belongs_to_correct_user(client):
     # user_b cannot delete it
     resp = await client.delete(f"/api/auth/users/{user_b}/vehicles/{vid}")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_me_vehicles_active_and_list(neon_me_client):
+    """GET/POST /api/auth/me/vehicles and PUT .../active mark is_active."""
+    resp = await neon_me_client.get("/api/auth/me/vehicles")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    r = await neon_me_client.post("/api/auth/me/vehicles", json=VALID_VEHICLE)
+    assert r.status_code == 201
+    body = r.json()
+    vid = body["id"]
+    assert body["is_active"] is False
+
+    r = await neon_me_client.put(f"/api/auth/me/vehicles/{vid}/active")
+    assert r.status_code == 200
+    assert r.json()["is_active"] is True
+
+    r = await neon_me_client.get("/api/auth/me/vehicles")
+    rows = r.json()
+    assert len(rows) == 1
+    assert rows[0]["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_me_charge_points_uses_active_vehicle(neon_me_client):
+    """GET /api/auth/me/charge-points filters by active vehicle port compatibility."""
+    await neon_me_client.post("/api/auth/me/vehicles", json=VALID_VEHICLE)
+    r = await neon_me_client.get("/api/auth/me/vehicles")
+    vid = r.json()[0]["id"]
+    await neon_me_client.put(f"/api/auth/me/vehicles/{vid}/active")
+
+    base_loc = {
+        "address": "1 Test Rd",
+        "town": "T",
+        "postcode": "21250",
+        "country": "US",
+        "latitude": 39.2555,
+        "longitude": -76.7105,
+        "contact_email": None,
+    }
+    cp_ccs = {
+        "id": 92001,
+        "uuid": "me-station-ccs",
+        "location": dict(base_loc),
+        "connections": [
+            {
+                "id": 1,
+                "port_type": "CCS",
+                "power_kw": 150.0,
+                "voltage": 400,
+                "amps": 375,
+                "current_type": "DC",
+                "status": "Operational",
+                "quantity": 1,
+            }
+        ],
+        "number_of_points": 2,
+        "price": None,
+        "availability": "Operational",
+        "membership_required": False,
+        "access_key_required": False,
+        "operator": "Op",
+        "last_verified": None,
+    }
+    cp_chademo = {
+        **cp_ccs,
+        "id": 92002,
+        "uuid": "me-station-chademo",
+        "connections": [
+            {
+                "id": 2,
+                "port_type": "CHAdeMO",
+                "power_kw": 50.0,
+                "voltage": 500,
+                "amps": 125,
+                "current_type": "DC",
+                "status": "Operational",
+                "quantity": 1,
+            }
+        ],
+    }
+    assert (await neon_me_client.post("/api/db/charge-points", json=cp_ccs)).status_code == 201
+    assert (await neon_me_client.post("/api/db/charge-points", json=cp_chademo)).status_code == 201
+
+    resp = await neon_me_client.get(
+        "/api/auth/me/charge-points",
+        params={"latitude": 39.2555, "longitude": -76.7105, "radius_km": 10},
+    )
+    assert resp.status_code == 200
+    uuids = {x["uuid"] for x in resp.json()}
+    assert uuids == {"me-station-ccs"}

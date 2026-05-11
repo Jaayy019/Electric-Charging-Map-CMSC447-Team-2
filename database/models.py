@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -31,8 +32,11 @@ class User(Base):
     sessions: Mapped[List[Session]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    vehicles: Mapped[List[Vehicle]] = relationship(
+    external_identities: Mapped[List["ExternalIdentity"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    vehicle_preference: Mapped[Optional["UserVehiclePreference"]] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
 
 
@@ -52,14 +56,44 @@ class Vehicle(Base):
     __tablename__ = "vehicles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
     make: Mapped[str] = mapped_column(String)
     model: Mapped[str] = mapped_column(String)
     year: Mapped[int] = mapped_column(Integer)
     port_type: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    user: Mapped[User] = relationship(back_populates="vehicles")
+
+class ExternalIdentity(Base):
+    """Links a Neon Auth (or other) subject to a local User row."""
+
+    __tablename__ = "external_identities"
+    __table_args__ = (
+        UniqueConstraint("provider", "external_subject", name="uq_ext_provider_subject"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String, default="neon_auth", index=True)
+    external_subject: Mapped[str] = mapped_column(String, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+
+    user: Mapped[User] = relationship(back_populates="external_identities")
+
+
+class UserVehiclePreference(Base):
+    """One row per user: which saved vehicle is active for station filtering."""
+
+    __tablename__ = "user_vehicle_preferences"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    active_vehicle_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("vehicles.id", ondelete="SET NULL"), nullable=True
+    )
+
+    user: Mapped[User] = relationship(back_populates="vehicle_preference")
+    active_vehicle: Mapped[Optional[Vehicle]] = relationship()
 
 
 class ChargePoint(Base):
