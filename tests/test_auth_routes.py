@@ -361,16 +361,12 @@ async def test_user_has_multiple_vehicles_orm(test_session):
 
     v1 = Vehicle(user_id=user.id, make="Tesla", model="Model 3", year=2024, port_type="CCS")
     v2 = Vehicle(user_id=user.id, make="Nissan", model="Leaf", year=2022, port_type="CHAdeMO")
-    v3 = Vehicle(
-        user_id=user.id, make="Ford", model="F-150 Lightning", year=2025, port_type="CCS"
-    )
+    v3 = Vehicle(user_id=user.id, make="Ford", model="F-150 Lightning", year=2025, port_type="CCS")
     test_session.add_all([v1, v2, v3])
     await test_session.commit()
 
     # Query vehicles directly by user_id (no relationship needed)
-    result = await test_session.execute(
-        select(Vehicle).where(Vehicle.user_id == user.id)
-    )
+    result = await test_session.execute(select(Vehicle).where(Vehicle.user_id == user.id))
     vehicles = result.scalars().all()
     assert len(vehicles) == 3
     makes = {v.make for v in vehicles}
@@ -573,9 +569,7 @@ async def test_me_charge_points_uses_active_vehicle(neon_me_client):
         ],
     }
     assert (await neon_me_client.post("/api/db/charge-points", json=cp_ccs)).status_code == 201
-    assert (
-        await neon_me_client.post("/api/db/charge-points", json=cp_chademo)
-    ).status_code == 201
+    assert (await neon_me_client.post("/api/db/charge-points", json=cp_chademo)).status_code == 201
 
     resp = await neon_me_client.get(
         "/api/auth/me/charge-points",
