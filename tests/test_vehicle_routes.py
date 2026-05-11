@@ -40,24 +40,28 @@ async def vclient(test_engine, monkeypatch):
     from main import app
 
     app.dependency_overrides[get_session] = _override_session
-
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-
     app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
-async def test_electric_vehicles_requires_filter_when_key_set(vclient):
-    """API Ninjas expects at least one filter parameter."""
+async def test_electric_vehicles_requires_filter_when_key_set(vclient, monkeypatch):
+    """API Ninjas expects at least one filter parameter — returns 400 without any."""
+    # Patch ninjas_get_json so we don't make real network calls
+    fake = AsyncMock(return_value=[])
+    monkeypatch.setattr("vehicle_routes.ninjas_get_json", fake)
+
     resp = await vclient.get("/api/vehicle/electric-vehicles")
     assert resp.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_electric_vehicles_missing_api_key_returns_503(test_engine, monkeypatch):
+    """Missing VEHICLE_API_KEY returns 503 on electric-vehicles endpoint."""
     monkeypatch.delenv("VEHICLE_API_KEY", raising=False)
+    monkeypatch.setenv("VEHICLE_API_KEY", "")
 
     factory = async_sessionmaker(test_engine, expire_on_commit=False)
 
@@ -68,22 +72,19 @@ async def test_electric_vehicles_missing_api_key_returns_503(test_engine, monkey
     from main import app
 
     app.dependency_overrides[get_session] = _override_session
-
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/vehicle/electric-makes")
-
+        # electric-vehicles calls require_vehicle_api_key() which raises 503
+        resp = await client.get("/api/vehicle/electric-vehicles", params={"make": "tesla"})
     app.dependency_overrides.clear()
     assert resp.status_code == 503
 
 
 @pytest.mark.asyncio
 async def test_electric_makes_proxies_api_ninjas(vclient, monkeypatch):
+    """GET /api/vehicle/electric-makes calls ninjas_get_json."""
     fake = AsyncMock(return_value=[{"name": "Tesla"}])
-    monkeypatch.setattr(
-        "vehicle_routes.ninjas_get_json",
-        fake,
-    )
+    monkeypatch.setattr("vehicle_routes.ninjas_get_json", fake)
 
     resp = await vclient.get("/api/vehicle/electric-makes")
     assert resp.status_code == 200
@@ -93,11 +94,9 @@ async def test_electric_makes_proxies_api_ninjas(vclient, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_electric_vehicles_calls_ninjas_with_params(vclient, monkeypatch):
+    """GET /api/vehicle/electric-vehicles passes make param to ninjas_get_json."""
     fake = AsyncMock(return_value=[{"make": "nissan", "model": "leaf"}])
-    monkeypatch.setattr(
-        "vehicle_routes.ninjas_get_json",
-        fake,
-    )
+    monkeypatch.setattr("vehicle_routes.ninjas_get_json", fake)
 
     resp = await vclient.get(
         "/api/vehicle/electric-vehicles",
