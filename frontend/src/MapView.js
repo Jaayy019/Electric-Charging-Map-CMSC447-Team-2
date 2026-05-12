@@ -190,6 +190,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
+  const [markerKey, setMarkerKey] = useState(null);
  
   // Vehicle selector panel state
   const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false);
