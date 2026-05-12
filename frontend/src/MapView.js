@@ -178,6 +178,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
+  const [markerKey, setMarkerKey] = useState(false);
 
   // Gets the user location and then gets the stations
   useEffect(() => {
@@ -261,7 +262,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
       </button>
     )}
 
-    {/*Side panel*/}
+    {/* Side panel */}
     {selectedStation && (
       <div
         style={{
@@ -383,6 +384,123 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
       </div>
 
+    )}
+
+    {/* Key for port types */}
+    {(<div
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          width: "200px",
+          height: markerKey ? "68vh" : "1vh",
+          backgroundColor: "#ffffff",
+          boxShadow: "-4px 0 12px rgba(0,0,0,0.15)",
+          padding: "25px",
+          zIndex: 2000,
+          overflowY: "auto",
+          fontFamily: "'Inter', sans-serif",
+          animation: "slideInUp 0.35s ease-out"
+        }}
+      >
+        {/* Open and close button */}
+        <button
+          onClick={() => setMarkerKey(!markerKey)}
+          style={{
+            position: "absolute",
+            top: markerKey ? "1%" : "20%",
+            left: "15px",
+            background: "none",
+            border: "none",
+            fontSize: "30px",
+            cursor: "pointer",
+            color: "#555"
+          }}
+        >
+          <b>{ markerKey ? "-" : "+" }</b>
+        </button>
+
+        {/* Marker key */}
+        {markerKey && (<div
+          style={{
+            fontSize: "13px",
+          }}>
+
+            <div style={{padding: "5px"}} />
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerType1Icon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>Type 1 charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerType2Icon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>Type 2 charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerTeslaIcon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>Tesla charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerCcs1Icon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>CCS Type 1 charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerCcs2Icon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>CCS Type 2 charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerChademoIcon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>CHAdeMO charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerNema5Icon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>NEMA 5 charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerNema14Icon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>NEMA 14 charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerMultipleIcon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>Multiple-type charger</p>
+              </div>
+            </div>
+
+            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+              <img src={chargerIcon} style={{ width: "30px", height: "30px" }} />
+              <div>
+                <p>Other/unknown charger</p>
+              </div>
+            </div>
+
+          </div>
+        )}
+      </div>
     )}
 
     {/* Makes the map container, basically just the HTML file but in javascript */}
