@@ -191,6 +191,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
   const [selectedStation, setSelectedStation] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [markerKey, setMarkerKey] = useState(null);
+  const [portFilter, setPortFilter] = useState([]);
  
   // Vehicle selector panel state
   const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false);
@@ -303,6 +304,18 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
   // Gets the display name for the active vehicle
   const activeVehicle = vehicles.find((v) => v.id === activeVehicleId);
  
+  // Filters by station port type
+  const filteredStations = stations.filter((station) => {
+
+    if (portFilter.length === 0) return true;
+
+    if (portFilter.includes("Multiple")) {
+    return hasMultipleTypes(station);
+    }
+
+    return station.connections?.some((c) => portFilter.includes(c.port_type));
+
+  });
 
   return (
   <>
@@ -973,73 +986,103 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
             <div style={{padding: "5px"}} />
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter("Type 1 (J1772)")}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerType1Icon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>Type 1 charger</p>
+                <p>Type 1 chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter("Type 2 (Socket Only)")}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerType2Icon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>Type 2 charger</p>
+                <p>Type 2 chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter(["NACS / Tesla Supercharger", "Tesla (Model S/X)"])}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerTeslaIcon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>Tesla charger</p>
+                <p>Tesla chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter("CCS (Type 1)")}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerCcs1Icon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>CCS Type 1 charger</p>
+                <p>CCS Type 1 chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter("CCS (Type 2)")}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerCcs2Icon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>CCS Type 2 charger</p>
+                <p>CCS Type 2 chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter("CHAdeMO")}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerChademoIcon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>CHAdeMO charger</p>
+                <p>CHAdeMO chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter(["NEMA 5-15R", "NEMA 5-20R"])}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerNema5Icon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>NEMA 5 charger</p>
+                <p>NEMA 5 chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter("NEMA 14-50")}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerNema14Icon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>NEMA 14 charger</p>
+                <p>NEMA 14 chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter("Multiple")}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerMultipleIcon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>Multiple-type charger</p>
+                <p>Multiple-type chargers</p>
               </div>
             </div>
 
-            <div style={{padding: "3px", display: "flex", alignItems: "center"}}>
+            <div
+              onClick={() => setPortFilter([])}
+              style={{padding: "3px", display: "flex", alignItems: "center"}}
+            >
               <img src={chargerIcon} style={{ width: "30px", height: "30px" }} />
               <div>
-                <p>Other/unknown charger</p>
+                <p>All chargers</p>
               </div>
             </div>
 
@@ -1087,7 +1130,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
       )}
 
-      {stations.map((station, idx) => (
+      {filteredStations.map((station, idx) => (
         <Marker
           key = {idx}
           position={[
