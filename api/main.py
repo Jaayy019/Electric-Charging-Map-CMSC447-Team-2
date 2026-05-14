@@ -103,7 +103,6 @@ async def _query_db_by_radius(
     deg_margin = distance_km / 111.0
 
     async with async_session_factory() as session:
-
         stmt = (
             select(ChargePoint)
             .options(selectinload(ChargePoint.connections))
@@ -129,12 +128,8 @@ async def _save_to_local_db(charge_points: List[ChargePointSummary]) -> int:
 
     saved = 0
     async with async_session_factory() as session:
-
         for cp in charge_points:
-
-            existing = await session.execute(
-                select(ChargePoint).where(ChargePoint.id == cp.id)
-            )
+            existing = await session.execute(select(ChargePoint).where(ChargePoint.id == cp.id))
             if existing.scalar_one_or_none() is not None:
                 continue
 
@@ -207,14 +202,12 @@ async def _fetch_and_save_from_ocm(params: dict) -> Optional[List[ChargePointSum
 
 @app.get("/api/charge-points", response_model=DataResponse, tags=["Charge Points"])
 async def get_charge_points(
-
     latitude: Optional[float] = Query(None, description="Latitude for location-based search"),
     longitude: Optional[float] = Query(None, description="Longitude for location-based search"),
     distance: Optional[int] = Query(
         None,
         description="Search radius in kilometers (default: 5km if lat/lng provided)",
     ),
-
 ):
     """
     Returns charge points using a database-first strategy:
@@ -228,15 +221,11 @@ async def get_charge_points(
 
     # try the database first
     if latitude is not None and longitude is not None:
-
-        logger.info(
-            "DB-first search: lat=%s lng=%s distance=%skm", latitude, longitude, dist_km
-        )
+        logger.info("DB-first search: lat=%s lng=%s distance=%skm", latitude, longitude, dist_km)
 
         db_results = await _query_db_by_radius(latitude, longitude, dist_km)
 
         if db_results:
-
             logger.info("Returning %s stations from Neon cache", len(db_results))
 
             # Kick off an OCM refresh in the background so new stations get saved
@@ -258,7 +247,7 @@ async def get_charge_points(
                 error=None,
             )
 
-    # Neon had nothing - fetch from OCM 
+    # Neon had nothing - fetch from OCM
     logger.info("No DB results for this area, fetching from OCM")
 
     ocm_params: dict = {
@@ -294,14 +283,8 @@ async def _fallback_from_local_db() -> DataResponse:
         return DataResponse(status="error", data=None, total=0, error="No database configured")
 
     try:
-
         async with async_session_factory() as session:
-
-            stmt = (
-                select(ChargePoint)
-                .options(selectinload(ChargePoint.connections))
-                .limit(100)
-            )
+            stmt = select(ChargePoint).options(selectinload(ChargePoint.connections)).limit(100)
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
