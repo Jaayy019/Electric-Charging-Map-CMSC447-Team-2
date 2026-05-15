@@ -154,13 +154,15 @@ describe("VehicleManager: Make / Model Flow", () => {
 
   test("fetches and displays models when a make is selected", async () => {
     mockFetch([]); // Initial list
-    mockFetch({ Results: [{ Model_Name: "Model 3" }, { Model_Name: "Model S" }] }); // handleMakeChange (NHTSA)
-    mockFetch([{ model: "Model 3" }, { model: "Model Y" }]); // handleMakeChange (API Ninjas)
+    mockFetch({ Results: [{ Model_Name: "Model 3" }, { Model_Name: "Model S" }] });
+    mockFetch([{ model: "Model 3" }, { model: "Model Y" }]);
 
     render(<VehicleManager {...defaultProps} />);
 
+    // Wait for initial load
     await waitFor(() => expect(screen.getByText(/0 vehicles saved/i)).toBeInTheDocument());
 
+    // Select "Tesla" from the Make dropdown
     fireEvent.change(getMakeSelect(), { target: { value: "Tesla" } });
 
     // Wait for models to load and appear in the Model dropdown
@@ -172,14 +174,14 @@ describe("VehicleManager: Make / Model Flow", () => {
   });
 
   test("model dropdown is enabled after models are fetched", async () => {
-    mockFetch([]); // initial list
+    mockFetch([]);
     mockFetch({
       Results: [
         { Model_Name: "Model Y" },
         { Model_Name: "Model 3" },
       ],
-    }); // handleMakeChange (NHTSA)
-    mockFetch([]); // handleMakeChange (API Ninjas)
+    });
+    mockFetch([]);
 
     render(<VehicleManager {...defaultProps} />);
 
@@ -193,7 +195,7 @@ describe("VehicleManager: Make / Model Flow", () => {
   });
 
   test("shows error if model fetch fails", async () => {
-    mockFetch([]); // Initial list
+    mockFetch([]);
     global.fetch.mockRejectedValueOnce(new Error("Network fail")); // trigger catch
 
     render(<VehicleManager {...defaultProps} />);
@@ -228,9 +230,9 @@ describe("VehicleManager: Adding a Vehicle", () => {
 
   test("shows 'Vehicle added!' success message after a successful post", async () => {
     mockFetch([]);                                    // initial vehicle list
-    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // handleMakeChange (NHTSA)
-    mockFetch([]);                                    // handleMakeChange (API Ninjas)
-    mockFetch(null);                                  // handleModelChange (EV specs)
+    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // NHSTA models
+    mockFetch([]);
+    mockFetch(null);                                  // EV specs (model change)
     mockFetch({ id: 10, make: "Tesla", model: "Model 3", year: 2023, port_type: "CCS (Type 1)" }); // post response
     mockFetch([{ id: 10, make: "Tesla", model: "Model 3", year: 2023, port_type: "CCS (Type 1)" }]); // refresh list
 
@@ -246,9 +248,9 @@ describe("VehicleManager: Adding a Vehicle", () => {
 
   test("new vehicle appears in the list after successful add", async () => {
     mockFetch([]); // Initial
-    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // handleMakeChange (NHTSA)
-    mockFetch([]); // handleMakeChange (API Ninjas)
-    mockFetch(null); // handleModelChange
+    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // NHSTA models
+    mockFetch([]);
+    mockFetch(null); // EV specs (model change)
     mockFetch({ id: 10, make: "Tesla", model: "Model 3", year: 2023, port_type: "CCS (Type 1)" }); // Add
     mockFetch([{ id: 10, make: "Tesla", model: "Model 3", year: 2023, port_type: "CCS (Type 1)" }]); // Refresh
 
@@ -264,9 +266,9 @@ describe("VehicleManager: Adding a Vehicle", () => {
 
   test("form resets after a successful add", async () => {
     mockFetch([]); // Initial
-    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // handleMakeChange (NHTSA)
-    mockFetch([]); // handleMakeChange (API Ninjas)
-    mockFetch(null); // handleModelChange
+    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // NHSTA models
+    mockFetch([]);
+    mockFetch(null); // EV specs (model change)
     mockFetch({ id: 10, make: "Tesla", model: "Model 3", year: 2023, port_type: "CCS (Type 1)" }); // Add
     mockFetch([{ id: 10, make: "Tesla", model: "Model 3", year: 2023, port_type: "CCS (Type 1)" }]); // Refresh
 
@@ -283,9 +285,10 @@ describe("VehicleManager: Adding a Vehicle", () => {
 
   test("shows error message if the post fails", async () => {
     mockFetch([]); // Initial
-    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // handleMakeChange (NHTSA)
-    mockFetch([]); // handleMakeChange (API Ninjas)
-    mockFetch(null); // handleModelChange
+    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // NHSTA models
+    mockFetch([]);
+    mockFetch(null); // EV specs (model change)
+
     // post returns 400 with an error detail
     global.fetch.mockResolvedValueOnce({
       ok: false,
@@ -305,9 +308,9 @@ describe("VehicleManager: Adding a Vehicle", () => {
 
   test("submit button is disabled while the post is happening", async () => {
     mockFetch([]); // Initial
-    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // handleMakeChange (NHTSA)
-    mockFetch([]); // handleMakeChange (API Ninjas)
-    mockFetch(null); // handleModelChange
+    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // NHSTA models
+    mockFetch([]);
+    mockFetch(null); // EV specs (model change)
 
     // Make the post hang so we can check the disabled state
     global.fetch.mockImplementationOnce(() => new Promise(() => { }));
@@ -410,11 +413,11 @@ describe("VehicleManager Deleting a Vehicle", () => {
 describe("VehicleManager: Auto fill port type", () => {
 
   test("shows Auto detected when EV API returns a known port type", async () => {
-    mockFetch([]); // Initial list
-    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // handleMakeChange (NHTSA)
-    mockFetch([{ model: "Model 3" }]); // handleMakeChange (API Ninjas)
+    mockFetch([]);
+    mockFetch({ Results: [{ Model_Name: "Model 3" }] });
+    mockFetch([{ model: "Model 3" }]);
     // EV specs response with a known charge_port
-    mockFetch([{ charge_port: "CCS Type 1" }]); // handleModelChange
+    mockFetch([{ charge_port: "CCS Type 1" }]);
 
     render(<VehicleManager {...defaultProps} />);
     await waitFor(() => expect(screen.getByText(/0 vehicles saved/i)).toBeInTheDocument());
@@ -429,11 +432,11 @@ describe("VehicleManager: Auto fill port type", () => {
   });
 
   test("does not show Auto detected when EV API returns no port data", async () => {
-    mockFetch([]); // Initial list
-    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // handleMakeChange (NHTSA)
-    mockFetch([{ model: "Model 3" }]); // handleMakeChange (API Ninjas)
+    mockFetch([]);
+    mockFetch({ Results: [{ Model_Name: "Model 3" }] });
+    mockFetch([{ model: "Model 3" }]);
     // EV specs with no charge_port field
-    mockFetch([{ charge_port: null }]); // handleModelChange
+    mockFetch([{ charge_port: null }]);
 
     render(<VehicleManager {...defaultProps} />);
     await waitFor(() => expect(screen.getByText(/0 vehicles saved/i)).toBeInTheDocument());
@@ -448,10 +451,10 @@ describe("VehicleManager: Auto fill port type", () => {
   });
 
   test("Auto detected badge disappears when user manually changes port type", async () => {
-    mockFetch([]); // Initial list
-    mockFetch({ Results: [{ Model_Name: "Model 3" }] }); // handleMakeChange (NHTSA)
-    mockFetch([{ model: "Model 3" }]); // handleMakeChange (API Ninjas)
-    mockFetch([{ charge_port: "CCS Type 1" }]); // handleModelChange
+    mockFetch([]);
+    mockFetch({ Results: [{ Model_Name: "Model 3" }] });
+    mockFetch([{ model: "Model 3" }]);
+    mockFetch([{ charge_port: "CCS Type 1" }]);
 
     render(<VehicleManager {...defaultProps} />);
     await waitFor(() => expect(screen.getByText(/0 vehicles saved/i)).toBeInTheDocument());
@@ -484,7 +487,7 @@ describe("VehicleManager: Editing a Vehicle", () => {
     mockFetch(savedVehicles);
     render(<VehicleManager {...defaultProps} />);
     await waitFor(() => expect(screen.getByText(/1 vehicle saved/i)).toBeInTheDocument());
-    
+
     expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
   });
 
@@ -497,7 +500,7 @@ describe("VehicleManager: Editing a Vehicle", () => {
 
     // Should show "Editing: ..." title
     expect(screen.getByText(/editing: 2022 tesla model 3/i)).toBeInTheDocument();
-    
+
     // Check form fields
     expect(screen.getByDisplayValue("Tesla")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Model 3")).toBeInTheDocument();
@@ -511,7 +514,7 @@ describe("VehicleManager: Editing a Vehicle", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
 
-    // Mock the PUT request and the subsequent re-fetch
+    // Mock the put request and the subsequent refetch
     mockFetch({ message: "Updated" });
     mockFetch([{ ...savedVehicles[0], year: 2024 }]);
 
