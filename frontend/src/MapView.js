@@ -462,7 +462,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
   const filteredStations = stations.filter((station) => {
 
-    // If a legend port filter is active, use ONLY that — ignores vehicle filter
+    // If a legend port filter is active, use ONLY that
     if (portFilter.length > 0) {
 
       if (portFilter.includes("Multiple")) return hasMultipleTypes(station);
@@ -918,7 +918,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
         </div>
 
       )}
-
+      
       {/* Side panel - station details */}
       {selectedStation && (
         <div
@@ -1252,5 +1252,5 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
     </>
 
   );
-
+  
 }
