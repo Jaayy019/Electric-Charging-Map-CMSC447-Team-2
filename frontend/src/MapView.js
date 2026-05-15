@@ -1,5 +1,5 @@
 //Imports the necessary leaflet map components
-import { MapContainer, TileLayer, Marker, useMap, Circle } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap, Circle, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import chargerIcon from "./icons/marker_default.png"
@@ -82,6 +82,66 @@ const hasMultipleTypes = (station) => {
 
 };
 
+// Many EVs can charge on multiple connector types. This maps a vehicle's saved
+// port_type to ALL compatible station port types so filtering works correctly.
+const PORT_COMPATIBILITY = {
+  "Tesla (NACS)": [
+    "NACS / Tesla Supercharger",
+    "Tesla (Model S/X)",
+    "CCS (Type 1)",
+    "Type 1 (J1772)",
+  ],
+  "CCS (Type 1)": [
+    "CCS (Type 1)",
+    "Type 1 (J1772)",
+  ],
+  "CCS (Type 2)": [
+    "CCS (Type 2)",
+    "Type 2 (Socket Only)",
+  ],
+  "Type 1 (J1772)": [
+    "Type 1 (J1772)",
+    "CCS (Type 1)",
+  ],
+  "Type 2 (Mennekes)": [
+    "Type 2 (Socket Only)",
+    "CCS (Type 2)",
+  ],
+  "CHAdeMO": [
+    "CHAdeMO",
+  ],
+  "Nema 14-50": [
+    "NEMA 14-50",
+  ],
+  "Nema 5-15": [
+    "NEMA 5-15R",
+    "NEMA 5-20R",
+  ],
+};
+
+// Returns true if a station has at least one connection compatible with the
+// vehicle's port type, using the multi-port compatibility map above.
+function stationMatchesVehicle(station, vehiclePortType) {
+
+  const compatiblePorts = PORT_COMPATIBILITY[vehiclePortType];
+
+  if (!compatiblePorts) {
+
+    // Fallback for unknown port types — substring match
+    const vp = vehiclePortType.toLowerCase();
+    return station.connections?.some((c) => {
+      const sp = (c.port_type || "").toLowerCase();
+      return sp.includes(vp) || vp.includes(sp);
+    });
+
+  }
+
+  return station.connections?.some((c) =>
+    compatiblePorts.includes(c.port_type)
+  );
+
+}
+
 
 function requestUserLocation(callback) {
 
@@ -118,7 +178,7 @@ function fetchStationsNearby(lat, lng, setStations, distance = 5) {
 
   fetch(`/api/charge-points?latitude=${lat}&longitude=${lng}&distance=${distance}`)
     .then(res => res.json())
-    .then(data => setStations(data.data))
+    .then(data => setStations(data.data || []))
     .catch(err => console.error("Could not fetch station data:", err));
 
 }
@@ -187,6 +247,23 @@ function LoadMap({ userLocation }) {
 
 }
 
+// Listens for map clicks and calls onMapClick with the lat/lng
+function MapClickHandler({ onMapClick }) {
+
+  useMapEvents({
+
+    click(e) {
+
+      onMapClick(e.latlng.lat, e.latlng.lng);
+
+    },
+
+  });
+
+  return null;
+
+}
+
 export default function MapView({ user, goToLogin, handleLogout, goToVehicles }) {
 
   // Sets up the arrays to store station data
@@ -194,6 +271,9 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
   const [selectedStation, setSelectedStation] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [markerKey, setMarkerKey] = useState(null);
+
+  // clickedLocation: set when user clicks the map, used as search center instead of userLocation
+  const [clickedLocation, setClickedLocation] = useState(null);
 
   // portFilter: set by clicking icons in the marker key legend
   // Empty array = show all, otherwise filters by port type string(s)
@@ -316,10 +396,24 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
   }
 
-  // Handles distance slider changes
+  // Clean up the debounce timer when the component unmounts
+  useEffect(() => {
+
+    return () => {
+
+      if (distanceTimer.current) clearTimeout(distanceTimer.current);
+
+    };
+
+  }, []);
+
+  // Handles distance slider changes — debounces 500ms before re-fetching
   function handleDistanceChange(newDistance) {
 
     setFilterDistance(newDistance);
+
+    // Clear selected station since it may no longer be in range
+    setSelectedStation(null);
 
     // Clear any pending re-fetch
     if (distanceTimer.current) clearTimeout(distanceTimer.current);
@@ -327,13 +421,39 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
     // Wait 500ms after the user stops dragging before hitting the API
     distanceTimer.current = setTimeout(() => {
 
-      if (userLocation) {
+      // Use clicked pin location if set, otherwise fall back to user's GPS location
+      const searchLocation = clickedLocation || userLocation;
 
-        fetchStationsNearby(userLocation.lat, userLocation.lng, setStations, newDistance);
+      if (searchLocation) {
+
+        fetchStationsNearby(searchLocation.lat, searchLocation.lng, setStations, newDistance);
 
       }
 
     }, 500);
+
+  }
+
+  // Handles map click - drops a pin and re-fetches stations around that point
+  function handleMapClick(lat, lng) {
+
+    setClickedLocation({ lat, lng });
+    setSelectedStation(null);
+    fetchStationsNearby(lat, lng, setStations, filterDistance);
+
+  }
+
+  // Clears the clicked pin and returns to searching around user location
+  function clearClickedLocation() {
+
+    setClickedLocation(null);
+    setSelectedStation(null);
+
+    if (userLocation) {
+
+      fetchStationsNearby(userLocation.lat, userLocation.lng, setStations, filterDistance);
+
+    }
 
   }
 
@@ -342,7 +462,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
   const filteredStations = stations.filter((station) => {
 
-    // If a legend port filter is active, use ONLY that
+    // If a legend port filter is active, use ONLY that — ignores vehicle filter
     if (portFilter.length > 0) {
 
       if (portFilter.includes("Multiple")) return hasMultipleTypes(station);
@@ -351,27 +471,11 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
     }
 
-    // No legend filter
+    // No legend filter - apply active vehicle compatibility filter
+    // Uses PORT_COMPATIBILITY map so multi-port vehicles show all compatible stations
     if (activeVehicle) {
 
-      const vehiclePort = activeVehicle.port_type.toLowerCase();
-
-      const hasCompatible = station.connections?.some((c) => {
-
-        const stationPort = (c.port_type || "").toLowerCase();
-
-        return (
-          stationPort.includes(vehiclePort) ||
-          vehiclePort.includes(stationPort) ||
-          (vehiclePort.includes("ccs") && stationPort.includes("ccs")) ||
-          (vehiclePort.includes("tesla") && (stationPort.includes("tesla") || stationPort.includes("nacs"))) ||
-          (vehiclePort.includes("j1772") && stationPort.includes("type 1")) ||
-          (vehiclePort.includes("type 2") && stationPort.includes("type 2"))
-        );
-
-      });
-
-      if (!hasCompatible) return false;
+      if (!stationMatchesVehicle(station, activeVehicle.port_type)) return false;
 
     }
 
@@ -552,6 +656,28 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
           </label>
 
         </div>
+
+        {/* Clear pin button - shown when user has clicked the map */}
+        {clickedLocation && (
+
+          <button
+            onClick={clearClickedLocation}
+            style={{
+              background: "#e74c3c",
+              border: "none",
+              borderRadius: "6px",
+              color: "white",
+              fontSize: "12px",
+              fontWeight: "600",
+              padding: "4px 10px",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            📍 Clear pin
+          </button>
+
+        )}
 
         {/* Fixed-width slot so badge + reset don't shift the other controls */}
         <div style={{ width: "100px", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -745,11 +871,15 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
               </select>
 
-              {/* Show the active vehicle's port type below the dropdown */}
+              {/* Show the active vehicle's compatible ports below the dropdown */}
               {activeVehicle && (
 
                 <p style={{ fontSize: "13px", color: "#1a6fd4", marginTop: "10px", fontWeight: "500" }}>
-                  Filtering for {activeVehicle.port_type} connectors
+                  Filtering for {
+                    PORT_COMPATIBILITY[activeVehicle.port_type]
+                      ? PORT_COMPATIBILITY[activeVehicle.port_type].join(", ")
+                      : activeVehicle.port_type
+                  } connectors
                 </p>
 
               )}
@@ -907,7 +1037,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
         </div>
       )}
 
-      {/* Key for port types — bottom left, expandable */}
+      {/* Key for port types */}
       {(
         <div
           style={{
@@ -1053,6 +1183,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
         <LoadMap userLocation={userLocation} />
         <EventHandler />
+        <MapClickHandler onMapClick={handleMapClick} />
 
         {/* Blue dot showing the user's current location */}
         {userLocation && (
@@ -1072,6 +1203,29 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
             />
 
           </>
+
+        )}
+
+        {/* Red pin at the clicked location */}
+        {clickedLocation && (
+
+          <Marker
+            position={[clickedLocation.lat, clickedLocation.lng]}
+            icon={L.divIcon({
+              className: "",
+              html: `<div style="
+                width: 22px;
+                height: 22px;
+                background: #e74c3c;
+                border: 3px solid white;
+                border-radius: 50% 50% 50% 0;
+                transform: rotate(-45deg);
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+              "></div>`,
+              iconSize: [22, 22],
+              iconAnchor: [11, 22],
+            })}
+          />
 
         )}
 
@@ -1097,5 +1251,5 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
       </MapContainer>
     </>
   );
-  
+
 }

@@ -254,7 +254,7 @@ function Login({ onLoginSuccess, goToSignUp, goToMap }) {
           <BoltIcon />
         </div>
 
-        <span style={styles.logoText}>Electric Vehicle Charge Map</span>
+        <span style={styles.logoText}>PlugPath Charging Map</span>
 
       </div>
 

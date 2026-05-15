@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import MapView from "./MapView";
 import Login from "./Login";
 import SignUp from "./SignUp";
-import VehicleManager from "./VehicleManager"
+import VehicleManager from "./VehicleManager";
+import LandingPage from "./LandingPage";
 
 function App() {
-  const [view, setView] = useState('map'); 
+
+  // Start on the landing page
+  const [view, setView] = useState('landing');
   const [user, setUser] = useState(null);
 
   async function fetchUser() {
@@ -21,8 +24,8 @@ function App() {
       const data = await res.json();
       setUser(data);
 
-    } 
-    
+    }
+
     else {
 
       setUser(null);
@@ -38,16 +41,23 @@ function App() {
   }, []);
 
   async function handleLogout() {
-  await fetch("/api/auth/sign-out", {
 
-    method: "POST",
-    credentials: "include"
+    await fetch("/api/auth/sign-out", {
 
-  });
+      method: "POST",
+      credentials: "include"
+
+    });
 
     setUser(null);
     setView("login");
 
+  }
+
+  if (view === 'landing') {
+    return (
+      <LandingPage onGetStarted={() => setView('map')} />
+    );
   }
 
   if (view === 'login') {
@@ -55,10 +65,10 @@ function App() {
       <Login
         onLoginSuccess={async () => {
           await fetchUser();
-          setView('map')
+          setView('map');
         }}
         goToSignUp={() => setView('signup')}
-        goToMap={() => setView('map')} 
+        goToMap={() => setView('map')}
       />
     );
   }
@@ -68,14 +78,13 @@ function App() {
       <SignUp
         onLoginSuccess={async () => {
           await fetchUser();
-          setView('map')
+          setView('map');
         }}
         goToLogin={() => setView('login')}
-        goToMap={() => setView('map')} 
+        goToMap={() => setView('map')}
       />
     );
   }
-
 
   if (view === 'vehicles') {
     return (
@@ -88,14 +97,15 @@ function App() {
 
   return (
     <div className="App">
-      <MapView 
-        user = {user}
-        goToLogin={() => setView('login')} 
+      <MapView
+        user={user}
+        goToLogin={() => setView('login')}
         handleLogout={handleLogout}
         goToVehicles={() => setView('vehicles')}
       />
     </div>
   );
+
 }
 
 export default App;
