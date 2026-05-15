@@ -1052,7 +1052,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
             zIndex: 2000,
             overflowY: "auto",
             fontFamily: "'Inter', sans-serif",
-            animation: "slideInUp 0.35s ease-out"
+            borderRadius: "15px 15px 0 0"
           }}
         >
           {/* Open and close button */}
@@ -1066,7 +1066,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
               border: "none",
               fontSize: "30px",
               cursor: "pointer",
-              color: "#555"
+              color: "#000"
             }}
           >
             <b>{markerKey ? "-" : "+"}</b>
@@ -1074,7 +1074,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
           {/* Marker key - clicking each row filters the map to that type */}
           {markerKey && (
-            <div style={{ fontSize: "13px" }}>
+            <div style={{ fontSize: "13px", color: "#888" }}>
 
               <div style={{ padding: "5px" }} />
 
