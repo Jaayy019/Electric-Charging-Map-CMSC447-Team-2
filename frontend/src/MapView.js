@@ -730,7 +730,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
         </div>
 
-      )}
+      </div>
 
       {/* Vehicle selector panel */}
       {vehiclePanelOpen && user && (
@@ -918,7 +918,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
         </div>
 
       )}
-      
+
       {/* Side panel - station details */}
       {selectedStation && (
         <div
