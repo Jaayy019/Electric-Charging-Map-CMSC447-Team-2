@@ -407,7 +407,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
   }, []);
 
-  // Handles distance slider changes — debounces 500ms before re-fetching
+  // Handles distance slider changes - debounces 500ms before re-fetching
   function handleDistanceChange(newDistance) {
 
     setFilterDistance(newDistance);
@@ -917,8 +917,8 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
         </div>
 
-        {filteredStations.map((station, idx) => (
-
+      )}
+      
       {/* Side panel - station details */}
       {selectedStation && (
         <div
@@ -1250,6 +1250,7 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
 
       </MapContainer>
     </>
+
   );
   
 }
