@@ -51,7 +51,7 @@ const chargeIcon = {
 
 };
 
-function getMarkerIcon(type) {
+export function getMarkerIcon(type) {
 
   const iconUrls = {
     'NACS / Tesla Supercharger': chargerTeslaIcon,
@@ -68,14 +68,14 @@ function getMarkerIcon(type) {
     'default': chargerIcon
   };
 
-  return L.icon({
+  return {
     ...chargeIcon,
     iconUrl: iconUrls[type] || iconUrls['default']
-  });
+  };
 
 }
 
-const hasMultipleTypes = (station) => {
+export const hasMultipleTypes = (station) => {
 
   if (station.connections?.[1]?.port_type) return true
   else return false
@@ -1083,9 +1083,9 @@ export default function MapView({ user, goToLogin, handleLogout, goToVehicles })
               station.location.latitude,
               station.location.longitude
             ]}
-            icon={hasMultipleTypes(station)
+            icon={L.icon(hasMultipleTypes(station)
               ? getMarkerIcon('Multiple')
-              : getMarkerIcon(station.connections?.[0]?.port_type)}
+              : getMarkerIcon(station.connections?.[0]?.port_type))}
             eventHandlers={{
               click: () => setSelectedStation(station)
             }}
